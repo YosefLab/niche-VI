@@ -1,35 +1,27 @@
-from typing import Optional, Literal, NamedTuple, List
+from dataclasses import dataclass
+from typing import Literal, NamedTuple, Optional
 
-import anndata as ad
 import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
 import pandas as pd
+import pingouin as pg
 import scanpy as sc
+import seaborn as sns
+from anndata import AnnData
 from joblib import Parallel, delayed
 from rich import print as rprint
 from rich.console import Console
 from rich.table import Table
-from scipy.spatial.distance import cdist
-from scipy.stats import spearmanr
-from tqdm import tqdm
-from anndata import AnnData
+from scib_metrics.benchmark import BatchCorrection, Benchmarker, BioConservation
 from scipy.sparse import csr_matrix
-
-from sklearn.neighbors import NearestNeighbors, kneighbors_graph
-from scvi.nearest_neighbors import pynndescent
-
-import pingouin as pg
-from scipy.stats import mannwhitneyu, ks_2samp, entropy, pearsonr
+from scipy.spatial.distance import cdist
+from scipy.stats import entropy, mannwhitneyu, pearsonr, spearmanr
+from nichevi.nearest_neighbors import pynndescent
 from sklearn.metrics import (
-    mean_squared_error,
-    mean_absolute_error,
     roc_auc_score,
 )
-
-from dataclasses import dataclass
-
-from scib_metrics.benchmark import Benchmarker, BatchCorrection, BioConservation
+from sklearn.neighbors import NearestNeighbors
+from tqdm import tqdm
 
 
 def get_values_row(indices, indptr, i):
@@ -69,7 +61,6 @@ def compute_similarity(
     np.array
         The similarity between vector1 and each row of vectors_list.
     """
-
     if measure == "euclidean":
         return np.linalg.norm(vector1 - vectors_list, axis=1)
     elif measure == "pearson":
@@ -119,7 +110,6 @@ def kl_divergence_set(p: np.array, q_set: np.array, epsilon: float = 1e-7) -> np
     float
         The KL divergence between p and each row of q_set.
     """
-
     # Add epsilon to both p and q_set
     p += epsilon
     q_set += epsilon
@@ -284,7 +274,6 @@ class SpatialAnalysis:
         plot
             Whether to plot the leiden clusters.
         """
-
         if leiden_keys is None:
             leiden_keys = self.latent_space_keys
 
@@ -340,7 +329,6 @@ class SpatialAnalysis:
         k_nn
             The number of latent neighbors to consider in the spatial analysis.
         """
-
         fov_names = self.adata.obs[self.sample_key].unique().tolist()
 
         latent_indexes_dict = {}
@@ -427,10 +415,14 @@ class SpatialAnalysis:
                             reducted_similarity = np.mean(similarity_parallel, axis=-1)
 
                         if self.reduction[1] == "10th":
-                            reducted_similarity = np.percentile(similarity_parallel, 10, axis=-1)
+                            reducted_similarity = np.percentile(
+                                similarity_parallel, 10, axis=-1
+                            )
 
                         if self.reduction[1] == "25th":
-                            reducted_similarity = np.percentile(similarity_parallel, 25, axis=-1)
+                            reducted_similarity = np.percentile(
+                                similarity_parallel, 25, axis=-1
+                            )
 
                         if self.reduction[1] == None:
                             reducted_similarity = similarity_parallel
@@ -981,10 +973,10 @@ class SpatialAnalysis:
             validation_only: If True, only the validation_indices are used for comparison.
             metric: The metric to use for comparison. Either "Pearson" or "AUC".
 
-        Returns:
+        Returns
+        -------
             A pandas DataFrame containing the summary score for each set of data.
         """
-
         if train_only:
             if self.train_indices is None:
                 raise ValueError(
@@ -1223,10 +1215,10 @@ class SpatialAnalysis:
         biocons: BioConservation = biocons,
         batchcorr: BatchCorrection = batchcorr,
         cell_type_key: str = None,
-        cell_type_list: List[str] = None,
+        cell_type_list: list[str] = None,
         batch_key: str = None,
         niche_type_key: str = None,
-        embedding_obsm_keys: List[str] = ["X_scVI"],
+        embedding_obsm_keys: list[str] = ["X_scVI"],
     ):
         self.embedding_obsm_keys = embedding_obsm_keys
         self.cell_type_list = cell_type_list
@@ -1270,7 +1262,7 @@ class SpatialAnalysis:
             "KMeans ARI",
             "cLISI",
         ] = "cLISI",
-        fs:int = 20,
+        fs: int = 20,
         save_fig: Optional[str] = None,
     ):
         keys_to_compare = len(self.embedding_obsm_keys)
@@ -1289,10 +1281,14 @@ class SpatialAnalysis:
         # Transpose the DataFrame
         df_metric_transposed = df_metric.T
 
-        custom_cmap = sns.color_palette("Set1", n_colors=len(df_metric_transposed.columns))
+        custom_cmap = sns.color_palette(
+            "Set1", n_colors=len(df_metric_transposed.columns)
+        )
 
         # Plotting
-        ax = df_metric_transposed.plot(kind="bar", rot=0, figsize=(14, 6), color=custom_cmap, width=0.7)    
+        ax = df_metric_transposed.plot(
+            kind="bar", rot=0, figsize=(14, 6), color=custom_cmap, width=0.7
+        )
 
         # Adding labels and title
         ax.set_ylabel(metric, fontsize=fs)
@@ -1310,7 +1306,6 @@ class SpatialAnalysis:
 
         # Add grid
         ax.grid(axis="y")
-
 
         if save_fig:
             plt.savefig(save_fig, bbox_inches="tight", dpi=1000)

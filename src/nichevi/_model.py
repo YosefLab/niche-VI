@@ -1,14 +1,12 @@
 import logging
-from typing import List, Literal, Optional, Sequence
+from collections.abc import Sequence
+from typing import Literal, Optional
 
-import numpy as np, pandas as pd
-from anndata import AnnData
+import numpy as np
+import pandas as pd
 import torch
+from anndata import AnnData
 from rich import print
-
-from sklearn.neighbors import NearestNeighbors
-
-
 from scvi import REGISTRY_KEYS
 from scvi._types import MinifiedDataType
 from scvi.data import AnnDataManager
@@ -25,19 +23,18 @@ from scvi.data.fields import (
     StringUnsField,
 )
 from scvi.model._utils import _init_library_size
-from scvi.model.base import UnsupervisedTrainingMixin
-from scvi.model.utils import get_minified_adata_scrna
-from scvi.utils import setup_anndata_dsp
-
 from scvi.model.base import (
     ArchesMixin,
     BaseMinifiedModeModelClass,
     RNASeqMixin,
+    UnsupervisedTrainingMixin,
     VAEMixin,
 )
+from scvi.model.utils import get_minified_adata_scrna
+from scvi.utils import setup_anndata_dsp
+from sklearn.neighbors import NearestNeighbors
 
 from ._module import nicheVAE
-
 
 _SCVI_LATENT_QZM = "_scvi_latent_qzm"
 _SCVI_LATENT_QZV = "_scvi_latent_qzv"
@@ -362,8 +359,8 @@ class nicheSCVI(
         latent_var_ct_key: Optional[str] = None,
         ###########
         # ---------------------
-        categorical_covariate_keys: Optional[List[str]] = None,
-        continuous_covariate_keys: Optional[List[str]] = None,
+        categorical_covariate_keys: Optional[list[str]] = None,
+        continuous_covariate_keys: Optional[list[str]] = None,
         cell_index_key="cell_index",
         **kwargs,
     ):
@@ -379,7 +376,6 @@ class nicheSCVI(
         %(param_cat_cov_keys)s
         %(param_cont_cov_keys)s
         """
-
         # adata.obsm[niche_indexes_key] = np.zeros((adata.n_obs, k_nn))
         # adata.obsm[niche_distances_key] = np.zeros((adata.n_obs, k_nn))
         # n_cell_types = len(adata.obs[labels_key].unique())
@@ -426,7 +422,7 @@ class nicheSCVI(
     @staticmethod
     def _get_fields_for_adata_minification(
         minified_data_type: MinifiedDataType,
-    ) -> List[BaseAnnDataField]:
+    ) -> list[BaseAnnDataField]:
         """Return the anndata fields required for adata minification of the given minified_data_type."""
         if minified_data_type == ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
             fields = [
@@ -641,106 +637,6 @@ def get_cell_niches(
     return None
 
 
-# def get_average_latent_per_celltype(
-#     adata: AnnData,
-#     labels_key: str,
-#     niche_indexes_key: str,
-#     latent_mean_key: Optional[str] = None,
-#     latent_var_key: Optional[str] = None,
-#     latent_mean_ct_keys: list[str] = ["qz1_m_niche_ct"],
-#     latent_var_ct_keys: list[str] = ["qz1_var_niche_ct"],
-#     zero_prior: bool = False,
-# ):
-#     # for each cell, take the average of the latent space for each label, namely the label-averaged latent_mean obsm
-
-#     if latent_mean_key is None:
-#         adata.obsm["qz1_m_niche_ct"] = np.empty(
-#             (adata.n_obs, adata.obsm[latent_mean_key].shape[1])
-#         )
-#         adata.obsm["qz1_var_niche_ct"] = np.empty(
-#             (adata.n_obs, adata.obsm[latent_var_key].shape[1])
-#         )
-
-#         return None
-
-#     n_cells = adata.n_obs
-#     niche_indexes = adata.obsm[niche_indexes_key]
-
-#     z1_mean_niches = adata.obsm[latent_mean_key][niche_indexes]
-#     z1_var_niches = adata.obsm[latent_var_key][niche_indexes]
-
-#     if "qz1_m_niche_knn" in latent_mean_ct_keys:
-#         adata.obsm["qz1_m_niche_knn"] = z1_mean_niches
-#         adata.obsm["qz1_var_niche_knn"] = z1_var_niches
-
-#         print(
-#             "[bold green]Saved qz1_m_niche_knn and qz1_var_niche_knn in adata.obsm[/bold green]"
-#         )
-
-#     if "qz1_m_niche_ct" in latent_mean_ct_keys:
-#         cell_types = adata.obs[labels_key].unique().tolist()
-
-#         cell_type_to_int = {cell_types[i]: i for i in range(len(cell_types))}
-#         integer_vector = np.vectorize(cell_type_to_int.get)(adata.obs[labels_key])
-
-#         # For each cell, get the cell types of its neighbors (as integers)
-#         cell_types_in_the_neighborhood = np.vstack(
-#             [integer_vector[niche_indexes[cell, :]] for cell in range(n_cells)]
-#         )
-
-#         dict_of_cell_type_indices = {}
-
-#         for cell_type, cell_type_idx in cell_type_to_int.items():
-#             ct_row_indices, ct_col_indices = np.where(
-#                 cell_types_in_the_neighborhood == cell_type_idx
-#             )  # [1]
-
-#             # dict of cells:local index of the cells of cell_type in the neighborhood.
-#             result_dict = {}
-#             for row_idx, col_idx in zip(ct_row_indices, ct_col_indices):
-#                 result_dict.setdefault(row_idx, []).append(col_idx)
-
-#             dict_of_cell_type_indices[cell_type] = result_dict
-
-#         # print(dict_of_cell_type_indices)
-
-#         latent_mean_ct_prior, latent_var_ct_prior = get_cell_type_priors(
-#             adata=adata,
-#             labels_key=labels_key,
-#             latent_mean_key=latent_mean_key,
-#             latent_var_key=latent_var_key,
-#             # latent_mean_ct_prior=latent_mean_ct_prior,
-#             # latent_var_ct_prior=latent_var_ct_prior,
-#             zero_prior=zero_prior,
-#         )
-
-#         z1_mean_niches_ct = np.stack(
-#             [latent_mean_ct_prior] * n_cells, axis=0
-#         )  # batch times n_cell_types times n_latent. Initialize your prior with a non-spatial average.
-#         z1_var_niches_ct = np.stack([latent_var_ct_prior] * n_cells, axis=0)
-
-#         # outer loop over cell types
-#         for cell_type, cell_type_idx in cell_type_to_int.items():
-#             ct_dict = dict_of_cell_type_indices[cell_type]
-#             # inner loop over every cell that has this cell type in its neighborhood.
-#             for cell_idx, neighbor_idxs in ct_dict.items():
-#                 z1_mean_niches_ct[cell_idx, cell_type_idx, :] = np.mean(
-#                     z1_mean_niches[cell_idx, neighbor_idxs, :], axis=0
-#                 )
-#                 z1_var_niches_ct[cell_idx, cell_type_idx, :] = np.mean(
-#                     z1_var_niches[cell_idx, neighbor_idxs, :], axis=0
-#                 )
-
-#         adata.obsm["qz1_m_niche_ct"] = z1_mean_niches_ct
-#         adata.obsm["qz1_var_niche_ct"] = z1_var_niches_ct
-
-#         print(
-#             "[bold green]Saved qz1_m_niche_ct and qz1_var_niche_ct in adata.obsm[/bold green]"
-#         )
-
-#     return None
-
-
 def get_average_latent_per_celltype(
     adata: AnnData,
     labels_key: str,
@@ -845,7 +741,6 @@ def get_cell_type_priors(
         The prior for the latent variance.
 
     """
-
     cell_types = adata.obs[labels_key].unique().tolist()
     n_cell_types = len(cell_types)
 
