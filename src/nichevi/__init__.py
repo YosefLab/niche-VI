@@ -1,7 +1,8 @@
 from importlib.metadata import version
 
-# from . import pl, pp, tl
+from ._model import nicheSCVI
+from ._module import nicheVAE
 
-# __all__ = ["pl", "pp", "tl"]
+__all__ = ["nicheSCVI", "nicheVAE"]
 
 __version__ = version("niche-VI")

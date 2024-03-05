@@ -1,12 +1,9 @@
-import collections
-from typing import Callable, Iterable, List, Literal, Optional
+from collections.abc import Iterable
 
 import torch
-from torch import nn
-from torch.distributions import Normal, Dirichlet
-from torch.nn import ModuleList
-
 from scvi.nn import Decoder, FCLayers
+from torch import nn
+from torch.distributions import Dirichlet
 
 
 class DirichletDecoder(Decoder):
@@ -116,9 +113,7 @@ class NicheDecoder(nn.Module):
         # Parameters for latent distribution
         p = self.decoder(x, *cat_list)
         p_m = self.mean_decoder(p)
-        p_v = torch.nn.Softplus()(
-            self.var_decoder(p)
-        )  # changed exp to softplus todo add eps to p_v
+        p_v = torch.nn.Softplus()(self.var_decoder(p))  # changed exp to softplus todo add eps to p_v
 
         p_m = p_m.reshape(p_m.shape[0], self.n_niche_components, self.n_output)
 

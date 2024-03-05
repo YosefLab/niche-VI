@@ -1,7 +1,5 @@
 import numpy as np
 from pynndescent import NNDescent
-
-from ._dataclass import NeighborsOutput
 from scipy.sparse import csr_matrix
 
 

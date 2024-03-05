@@ -3,7 +3,6 @@ import functools
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from scib_metrics.utils import cdist, get_ndarray
 
 from ._dataclass import NeighborsOutput
