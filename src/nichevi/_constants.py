@@ -10,5 +10,4 @@ class _NICHEVI_REGISTRY_KEYS_NT(NamedTuple):
     Z1_VAR_CT_KEY: str = "latent_var_ct_key"
     Z1_MEAN_KNN_KEY: str = "latent_mean_knn_key"
 
-
-NICHEVI_REGISTRY_KEYS = _NICHEVI_REGISTRY_KEYS_NT()
+NICHEVI_REGISTRY_KEYS = _NICHEVI_REGISTRY_KEYS_NT()	
