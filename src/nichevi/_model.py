@@ -35,6 +35,7 @@ from scvi.utils import setup_anndata_dsp
 from sklearn.neighbors import NearestNeighbors
 
 from ._module import nicheVAE
+from ._constants import NICHEVI_REGISTRY_KEYS
 
 _SCVI_LATENT_QZM = "_scvi_latent_qzm"
 _SCVI_LATENT_QZV = "_scvi_latent_qzv"
@@ -396,12 +397,14 @@ class nicheSCVI(
             NumericalJointObsField(
                 REGISTRY_KEYS.CONT_COVS_KEY, continuous_covariate_keys
             ),
-            ObsmField(REGISTRY_KEYS.NICHE_COMPOSITION_KEY, niche_composition_key),
+            ObsmField(
+                NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY, niche_composition_key
+            ),
             # ObsmField(REGISTRY_KEYS.NICHE_DISTANCES_KEY, niche_distances_key),
-            ObsmField(REGISTRY_KEYS.NICHE_INDEXES_KEY, niche_indexes_key),
-            ObsmField(REGISTRY_KEYS.Z1_MEAN_KEY, latent_mean_key),
+            ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_INDEXES_KEY, niche_indexes_key),
+            ObsmField(NICHEVI_REGISTRY_KEYS.Z1_MEAN_KEY, latent_mean_key),
             # ObsmField(REGISTRY_KEYS.Z1_VAR_KEY, latent_var_key),
-            ObsmField(REGISTRY_KEYS.Z1_MEAN_CT_KEY, latent_mean_ct_key),
+            ObsmField(NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY, latent_mean_ct_key),
             # ObsmField(REGISTRY_KEYS.Z1_VAR_CT_KEY, latent_var_ct_key),
             # ObsmField(REGISTRY_KEYS.Z1_MEAN_KNN_KEY, latent_mean_knn_key),
             NumericalObsField(

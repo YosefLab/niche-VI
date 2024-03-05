@@ -22,6 +22,7 @@ from torch.distributions import Normal
 from torch.distributions import kl_divergence as kl
 
 from ._components import DirichletDecoder, NicheDecoder
+from ._constants import NICHEVI_REGISTRY_KEYS
 
 torch.backends.cudnn.benchmark = True
 
@@ -112,7 +113,9 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         niche_components: Literal[
             "cell_type", "knn", "knn_unweighted", "cell_type_unweighted"
         ] = "cell_type",  # TODO: useless as we converged to "cell_type_unweighted"
-        niche_combination: Literal["latent", "observed"] = "observed",  # TODO: useless as we converged to "observed"
+        niche_combination: Literal[
+            "latent", "observed"
+        ] = "observed",  # TODO: useless as we converged to "observed"
         niche_likelihood: Literal["poisson", "gaussian"] = "gaussian",
         prior_type: Literal["gaussian", "mog"] = "gaussian",
         prior_mixture_k: Optional[int] = None,
@@ -141,7 +144,9 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         n_cats_per_cov: Optional[Iterable[int]] = None,
         ###########
         dropout_rate: Tunable[float] = 0.1,
-        dispersion: Tunable[Literal["gene", "gene-batch", "gene-label", "gene-cell"]] = "gene",
+        dispersion: Tunable[
+            Literal["gene", "gene-batch", "gene-label", "gene-cell"]
+        ] = "gene",
         log_variational: bool = True,
         gene_likelihood: Tunable[Literal["zinb", "nb", "poisson"]] = "zinb",
         latent_distribution: Tunable[Literal["normal", "ln"]] = "normal",
@@ -186,11 +191,16 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         if not self.use_observed_lib_size:
             if library_log_means is None or library_log_vars is None:
                 raise ValueError(
-                    "If not using observed_lib_size, " "must provide library_log_means and library_log_vars."
+                    "If not using observed_lib_size, "
+                    "must provide library_log_means and library_log_vars."
                 )
 
-            self.register_buffer("library_log_means", torch.from_numpy(library_log_means).float())
-            self.register_buffer("library_log_vars", torch.from_numpy(library_log_vars).float())
+            self.register_buffer(
+                "library_log_means", torch.from_numpy(library_log_means).float()
+            )
+            self.register_buffer(
+                "library_log_vars", torch.from_numpy(library_log_vars).float()
+            )
 
         if self.dispersion == "gene":
             self.px_r = torch.nn.Parameter(torch.randn(n_input))
@@ -264,7 +274,9 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             **_extra_decoder_kwargs,
         )
 
-        self.n_niche_components = n_cell_types if niche_components.startswith("cell_type") else k_nn
+        self.n_niche_components = (
+            n_cell_types if niche_components.startswith("cell_type") else k_nn
+        )
         self.niche_decoder = NicheDecoder(
             n_input=n_input_decoder,
             # n_output=n_input_decoder_niche,
@@ -286,7 +298,6 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             n_layers=n_layers_compo,
             n_hidden=n_hidden_compo,
             inject_covariates=deeply_inject_covariates,
-            temperature=compo_temperature,
             use_batch_norm=use_batch_norm_decoder,
             use_layer_norm=use_layer_norm_decoder,
             **_extra_decoder_kwargs,
@@ -306,9 +317,15 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             if prior_mixture_k is None:
                 prior_mixture_k = n_labels
 
-            self.prior_logits = torch.nn.Parameter(torch.nn.init.zeros_(torch.empty(prior_mixture_k)))
-            self.prior_means = torch.nn.Parameter(torch.nn.init.normal_(torch.empty(n_latent, prior_mixture_k)))
-            self.prior_scales = torch.nn.Parameter(torch.nn.init.zeros_(torch.empty(n_latent, prior_mixture_k)))
+            self.prior_logits = torch.nn.Parameter(
+                torch.nn.init.zeros_(torch.empty(prior_mixture_k))
+            )
+            self.prior_means = torch.nn.Parameter(
+                torch.nn.init.normal_(torch.empty(n_latent, prior_mixture_k))
+            )
+            self.prior_scales = torch.nn.Parameter(
+                torch.nn.init.zeros_(torch.empty(n_latent, prior_mixture_k))
+            )
 
     def _get_inference_input(
         self,
@@ -341,7 +358,9 @@ class nicheVAE(BaseMinifiedModeModuleClass):
                     "observed_lib_size": observed_lib_size,
                 }
             else:
-                raise NotImplementedError(f"Unknown minified-data type: {self.minified_data_type}")
+                raise NotImplementedError(
+                    f"Unknown minified-data type: {self.minified_data_type}"
+                )
 
         return input_dict
 
@@ -358,7 +377,11 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         cat_covs = tensors[cat_key] if cat_key in tensors.keys() else None
 
         size_factor_key = REGISTRY_KEYS.SIZE_FACTOR_KEY
-        size_factor = torch.log(tensors[size_factor_key]) if size_factor_key in tensors.keys() else None
+        size_factor = (
+            torch.log(tensors[size_factor_key])
+            if size_factor_key in tensors.keys()
+            else None
+        )
 
         input_dict = {
             "z": z,
@@ -379,8 +402,12 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         log library sizes in the batch the cell corresponds to.
         """
         n_batch = self.library_log_means.shape[1]
-        local_library_log_means = F.linear(one_hot(batch_index, n_batch), self.library_log_means)
-        local_library_log_vars = F.linear(one_hot(batch_index, n_batch), self.library_log_vars)
+        local_library_log_means = F.linear(
+            one_hot(batch_index, n_batch), self.library_log_means
+        )
+        local_library_log_vars = F.linear(
+            one_hot(batch_index, n_batch), self.library_log_vars
+        )
         return local_library_log_means, local_library_log_vars
 
     @auto_move_data
@@ -413,14 +440,18 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         qz, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
         ql = None
         if not self.use_observed_lib_size:
-            ql, library_encoded = self.l_encoder(encoder_input, batch_index, *categorical_input)
+            ql, library_encoded = self.l_encoder(
+                encoder_input, batch_index, *categorical_input
+            )
             library = library_encoded
 
         if n_samples > 1:
             untran_z = qz.sample((n_samples,))
             z = self.z_encoder.z_transformation(untran_z)
             if self.use_observed_lib_size:
-                library = library.unsqueeze(0).expand((n_samples, library.size(0), library.size(1)))
+                library = library.unsqueeze(0).expand(
+                    (n_samples, library.size(0), library.size(1))
+                )
             else:
                 library = ql.sample((n_samples,))
         outputs = {"z": z, "qz": qz, "ql": ql, "library": library}
@@ -435,9 +466,13 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             z = self.z_encoder.z_transformation(untran_z)
             library = torch.log(observed_lib_size)
             if n_samples > 1:
-                library = library.unsqueeze(0).expand((n_samples, library.size(0), library.size(1)))
+                library = library.unsqueeze(0).expand(
+                    (n_samples, library.size(0), library.size(1))
+                )
         else:
-            raise NotImplementedError(f"Unknown minified-data type: {self.minified_data_type}")
+            raise NotImplementedError(
+                f"Unknown minified-data type: {self.minified_data_type}"
+            )
         outputs = {"z": z, "qz_m": qzm, "qz_v": qzv, "ql": None, "library": library}
         return outputs
 
@@ -459,7 +494,9 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         if cont_covs is None:
             decoder_input = z
         elif z.dim() != cont_covs.dim():
-            decoder_input = torch.cat([z, cont_covs.unsqueeze(0).expand(z.size(0), -1, -1)], dim=-1)
+            decoder_input = torch.cat(
+                [z, cont_covs.unsqueeze(0).expand(z.size(0), -1, -1)], dim=-1
+            )
         else:
             decoder_input = torch.cat([z, cont_covs], dim=-1)
 
@@ -483,7 +520,9 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             y,
         )
         if self.dispersion == "gene-label":
-            px_r = F.linear(one_hot(y, self.n_labels), self.px_r)  # px_r gets transposed - last dimension is nb genes
+            px_r = F.linear(
+                one_hot(y, self.n_labels), self.px_r
+            )  # px_r gets transposed - last dimension is nb genes
         elif self.dispersion == "gene-batch":
             px_r = F.linear(one_hot(batch_index, self.n_batch), self.px_r)
         elif self.dispersion == "gene":
@@ -514,7 +553,9 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             pl = Normal(local_library_log_means, local_library_log_vars.sqrt())
         pz = Normal(torch.zeros_like(z), torch.ones_like(z))
 
-        niche_mean, niche_variance = self.niche_decoder(decoder_input, batch_index, *categorical_input)
+        niche_mean, niche_variance = self.niche_decoder(
+            decoder_input, batch_index, *categorical_input
+        )
 
         if self.niche_likelihood == "poisson":
             niche_expression = torch.distributions.Poisson(niche_variance)
@@ -547,7 +588,7 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         """Computes the loss function for the model."""
         x = tensors[REGISTRY_KEYS.X_KEY]
 
-        niche_weights_ct = tensors[REGISTRY_KEYS.NICHE_COMPOSITION_KEY]
+        niche_weights_ct = tensors[NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY]
 
         if self.niche_components == "cell_type":
             niche_weights = niche_weights_ct  # maybe requires grad 0
@@ -560,7 +601,9 @@ class nicheVAE(BaseMinifiedModeModuleClass):
 
         # NICHE PRIOR DISTRIBUTION-------------------------------------------------------------------------------
 
-        z1_mean_niche = tensors[REGISTRY_KEYS.Z1_MEAN_CT_KEY]  # batch times cell_types times n_latent
+        z1_mean_niche = tensors[
+            NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY
+        ]  # batch times cell_types times n_latent
         # z1_var_niche = tensors[REGISTRY_KEYS.Z1_VAR_CT_KEY]
 
         # POSTERIOR DISTRIBUTION-------------------------------------------------------------------------------
@@ -569,8 +612,12 @@ class nicheVAE(BaseMinifiedModeModuleClass):
 
         # --------------Niche mixture posterior distribution  DEPRECATED--------------------------
         if self.niche_combination == "latent":
-            weighted_reconst_loss_niche = torch.zeros(n_batch).type(torch.float64).to(x.device)
-            for type in range(n_cell_types):  # TODO can you replace the for loop with a torch.sum?
+            weighted_reconst_loss_niche = (
+                torch.zeros(n_batch).type(torch.float64).to(x.device)
+            )
+            for type in range(
+                n_cell_types
+            ):  # TODO can you replace the for loop with a torch.sum?
                 latent_mean_type_prior, latent_var_type_prior = (
                     z1_mean_niche[:, type, :],
                     z1_mean_niche[:, type, :],  # z1_var_niche[:, type, :],
@@ -581,20 +628,32 @@ class nicheVAE(BaseMinifiedModeModuleClass):
                     niche_var_mat[:, type, :],
                 )
 
-                niche_type_prior_distribution = Normal(latent_mean_type_prior, latent_var_type_prior.sqrt())
-                niche_type_posterior_distribution = Normal(latent_mean_type_posterior, latent_var_type_posterior.sqrt())
+                niche_type_prior_distribution = Normal(
+                    latent_mean_type_prior, latent_var_type_prior.sqrt()
+                )
+                niche_type_posterior_distribution = Normal(
+                    latent_mean_type_posterior, latent_var_type_posterior.sqrt()
+                )
 
                 weighted_reconst_loss_niche += niche_weights_type * kl(
                     niche_type_posterior_distribution, niche_type_prior_distribution
                 ).sum(dim=-1)
 
         elif self.niche_combination == "observed":
-            reconst_loss_niche = -generative_outputs["niche_expression"].log_prob(z1_mean_niche).sum(dim=(-1))
+            reconst_loss_niche = (
+                -generative_outputs["niche_expression"]
+                .log_prob(z1_mean_niche)
+                .sum(dim=(-1))
+            )
 
-            weighted_reconst_loss_niche = (reconst_loss_niche * niche_weights).sum(dim=-1)
+            weighted_reconst_loss_niche = (reconst_loss_niche * niche_weights).sum(
+                dim=-1
+            )
 
         # COMPOSITION LOSS----------------------------------------------------------------
-        true_niche_composition = tensors[REGISTRY_KEYS.NICHE_COMPOSITION_KEY] + epsilon
+        true_niche_composition = (
+            tensors[NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY] + epsilon
+        )
         true_niche_composition = true_niche_composition / true_niche_composition.sum(
             dim=-1,
             keepdim=True,
@@ -602,9 +661,13 @@ class nicheVAE(BaseMinifiedModeModuleClass):
 
         reconstructed_niche_composition = generative_outputs["niche_composition"]
 
-        composition_loss = -reconstructed_niche_composition.log_prob(true_niche_composition)
+        composition_loss = -reconstructed_niche_composition.log_prob(
+            true_niche_composition
+        )
 
-        kl_divergence_z = kl(inference_outputs["qz"], generative_outputs["pz"]).sum(dim=-1)
+        kl_divergence_z = kl(inference_outputs["qz"], generative_outputs["pz"]).sum(
+            dim=-1
+        )
 
         if not self.use_observed_lib_size:
             kl_divergence_l = kl(
@@ -630,7 +693,10 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         _weighted_kl_local = self.latent_kl_weight * weighted_kl_local
 
         loss = torch.mean(
-            _weighted_reconst_loss_cell + _weighted_reconst_loss_niche + _weighted_kl_local + _weighted_composition_loss
+            _weighted_reconst_loss_cell
+            + _weighted_reconst_loss_niche
+            + _weighted_kl_local
+            + _weighted_composition_loss
         )
 
         kl_local = {
@@ -687,9 +753,13 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         if self.gene_likelihood == "poisson":
             l_train = generative_outputs["px"].rate
             l_train = torch.clamp(l_train, max=1e8)
-            dist = torch.distributions.Poisson(l_train)  # Shape : (n_samples, n_cells_batch, n_genes)
+            dist = torch.distributions.Poisson(
+                l_train
+            )  # Shape : (n_samples, n_cells_batch, n_genes)
         if n_samples > 1:
-            exprs = dist.sample().permute([1, 2, 0])  # Shape : (n_cells_batch, n_genes, n_samples)
+            exprs = dist.sample().permute(
+                [1, 2, 0]
+            )  # Shape : (n_cells_batch, n_genes, n_samples)
         else:
             exprs = dist.sample()
 
@@ -728,7 +798,9 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         n_passes = int(np.ceil(n_mc_samples / n_mc_samples_per_pass))
         for _ in range(n_passes):
             # Distribution parameters and sampled variables
-            inference_outputs, _, losses = self.forward(tensors, inference_kwargs={"n_samples": n_mc_samples_per_pass})
+            inference_outputs, _, losses = self.forward(
+                tensors, inference_kwargs={"n_samples": n_mc_samples_per_pass}
+            )
             qz = inference_outputs["qz"]
             ql = inference_outputs["ql"]
             z = inference_outputs["z"]
@@ -738,7 +810,11 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             reconst_loss = losses.dict_sum(losses.reconstruction_loss)
 
             # Log-probabilities
-            p_z = Normal(torch.zeros_like(qz.loc), torch.ones_like(qz.scale)).log_prob(z).sum(dim=-1)
+            p_z = (
+                Normal(torch.zeros_like(qz.loc), torch.ones_like(qz.scale))
+                .log_prob(z)
+                .sum(dim=-1)
+            )
             p_x_zl = -reconst_loss
             q_z_x = qz.log_prob(z).sum(dim=-1)
             log_prob_sum = p_z + p_x_zl - q_z_x
@@ -749,7 +825,11 @@ class nicheVAE(BaseMinifiedModeModuleClass):
                     local_library_log_vars,
                 ) = self._compute_local_library_params(batch_index)
 
-                p_l = Normal(local_library_log_means, local_library_log_vars.sqrt()).log_prob(library).sum(dim=-1)
+                p_l = (
+                    Normal(local_library_log_means, local_library_log_vars.sqrt())
+                    .log_prob(library)
+                    .sum(dim=-1)
+                )
                 q_l_x = ql.log_prob(library).sum(dim=-1)
 
                 log_prob_sum += p_l - q_l_x
