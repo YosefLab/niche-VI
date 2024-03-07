@@ -24,7 +24,7 @@ from ._components import DirichletDecoder, NicheDecoder
 logger = logging.getLogger(__name__)
 
 
-class VAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
+class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
     """Variational auto-encoder :cite:p:`Lopez18`.
 
     Parameters

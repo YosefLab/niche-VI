@@ -40,7 +40,7 @@ from scvi.model.utils import get_minified_adata_scrna
 from scvi.utils import setup_anndata_dsp
 from sklearn.neighbors import NearestNeighbors
 
-from ._module import nicheVAE
+from ._module_v11 import nicheVAE
 from ._constants import NICHEVI_REGISTRY_KEYS
 
 _SCVI_LATENT_QZM = "_scvi_latent_qzm"
@@ -207,7 +207,7 @@ class nicheSCVI(
         cell_coordinates_key: str,
         k_nn: int,
         latent_mean_key: str,
-        latent_mean_niche_keys: str,
+        latent_mean_niche_key: str,
         niche_composition_key: str,
         niche_indexes_key: str,
         niche_distances_key: str | None = None,
@@ -256,7 +256,7 @@ class nicheSCVI(
             labels_key=label_key,
             niche_indexes_key=niche_indexes_key,
             latent_mean_key=latent_mean_key,
-            latent_mean_ct_keys=latent_mean_niche_keys,
+            latent_mean_ct_key=latent_mean_niche_key,
         )
 
         return None
@@ -269,6 +269,7 @@ class nicheSCVI(
         ############################
         niche_composition_key: str,
         niche_indexes_key: str,
+        niche_distances_key: str | None = None,
         ############################
         layer: str | None = None,
         batch_key: str | None = None,
@@ -312,6 +313,7 @@ class nicheSCVI(
                 NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY, niche_composition_key
             ),
             ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_INDEXES_KEY, niche_indexes_key),
+            ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_DISTANCES_KEY, niche_distances_key),
             ObsmField(NICHEVI_REGISTRY_KEYS.Z1_MEAN_KEY, latent_mean_key),
             ObsmField(NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY, latent_mean_ct_key),
         ]
@@ -545,7 +547,7 @@ def get_average_latent_per_celltype(
     labels_key: str,
     niche_indexes_key: str,
     latent_mean_key: str | None = None,
-    latent_mean_ct_keys: list[str] = ["qz1_m_niche_ct"],
+    latent_mean_ct_key: str = "qz1_m_niche_ct",
 ):
     # for each cell, take the average of the latent space for each label, namely the label-averaged latent_mean obsm
 
@@ -563,50 +565,49 @@ def get_average_latent_per_celltype(
 
     z1_mean_niches = adata.obsm[latent_mean_key][niche_indexes]
 
-    if "qz1_m_niche_ct" in latent_mean_ct_keys:
-        cell_types = adata.obs[labels_key].unique().tolist()
+    cell_types = adata.obs[labels_key].unique().tolist()
 
-        cell_type_to_int = {cell_types[i]: i for i in range(len(cell_types))}
-        integer_vector = np.vectorize(cell_type_to_int.get)(adata.obs[labels_key])
+    cell_type_to_int = {cell_types[i]: i for i in range(len(cell_types))}
+    integer_vector = np.vectorize(cell_type_to_int.get)(adata.obs[labels_key])
 
-        # For each cell, get the cell types of its neighbors (as integers)
-        cell_types_in_the_neighborhood = np.vstack(
-            [integer_vector[niche_indexes[cell, :]] for cell in range(n_cells)]
-        )
+    # For each cell, get the cell types of its neighbors (as integers)
+    cell_types_in_the_neighborhood = np.vstack(
+        [integer_vector[niche_indexes[cell, :]] for cell in range(n_cells)]
+    )
 
-        dict_of_cell_type_indices = {}
+    dict_of_cell_type_indices = {}
 
-        for cell_type, cell_type_idx in cell_type_to_int.items():
-            ct_row_indices, ct_col_indices = np.where(
-                cell_types_in_the_neighborhood == cell_type_idx
-            )  # [1]
+    for cell_type, cell_type_idx in cell_type_to_int.items():
+        ct_row_indices, ct_col_indices = np.where(
+            cell_types_in_the_neighborhood == cell_type_idx
+        )  # [1]
 
-            # dict of cells:local index of the cells of cell_type in the neighborhood.
-            result_dict = {}
-            for row_idx, col_idx in zip(ct_row_indices, ct_col_indices):
-                result_dict.setdefault(row_idx, []).append(col_idx)
+        # dict of cells:local index of the cells of cell_type in the neighborhood.
+        result_dict = {}
+        for row_idx, col_idx in zip(ct_row_indices, ct_col_indices):
+            result_dict.setdefault(row_idx, []).append(col_idx)
 
-            dict_of_cell_type_indices[cell_type] = result_dict
+        dict_of_cell_type_indices[cell_type] = result_dict
 
-        # print(dict_of_cell_type_indices)
+    # print(dict_of_cell_type_indices)
 
-        latent_mean_ct_prior = np.zeros((n_cell_types, n_latent_z1))
+    latent_mean_ct_prior = np.zeros((n_cell_types, n_latent_z1))
 
-        z1_mean_niches_ct = np.stack(
-            [latent_mean_ct_prior] * n_cells, axis=0
-        )  # batch times n_cell_types times n_latent. Initialize your prior with a non-spatial average.
+    z1_mean_niches_ct = np.stack(
+        [latent_mean_ct_prior] * n_cells, axis=0
+    )  # batch times n_cell_types times n_latent. Initialize your prior with a non-spatial average.
 
-        # outer loop over cell types
-        for cell_type, cell_type_idx in cell_type_to_int.items():
-            ct_dict = dict_of_cell_type_indices[cell_type]
-            # inner loop over every cell that has this cell type in its neighborhood.
-            for cell_idx, neighbor_idxs in ct_dict.items():
-                z1_mean_niches_ct[cell_idx, cell_type_idx, :] = np.mean(
-                    z1_mean_niches[cell_idx, neighbor_idxs, :], axis=0
-                )
+    # outer loop over cell types
+    for cell_type, cell_type_idx in cell_type_to_int.items():
+        ct_dict = dict_of_cell_type_indices[cell_type]
+        # inner loop over every cell that has this cell type in its neighborhood.
+        for cell_idx, neighbor_idxs in ct_dict.items():
+            z1_mean_niches_ct[cell_idx, cell_type_idx, :] = np.mean(
+                z1_mean_niches[cell_idx, neighbor_idxs, :], axis=0
+            )
 
-        adata.obsm["qz1_m_niche_ct"] = z1_mean_niches_ct
+    adata.obsm[latent_mean_ct_key] = z1_mean_niches_ct
 
-        print("[bold green]Saved qz1_m_niche_ct in adata.obsm[/bold green]")
+    print("[bold green]Saved qz1_m_niche_ct in adata.obsm[/bold green]")
 
     return None
