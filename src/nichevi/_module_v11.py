@@ -144,7 +144,6 @@ class VAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         n_input: int,
         ##############################
         n_output_niche: int,
-        k_nn: int,
         ##############################
         n_batch: int = 0,
         n_labels: int = 0,
