@@ -29,7 +29,7 @@ from scvi.utils import setup_anndata_dsp
 
 from scvi.model.base import (
     EmbeddingMixin,
-    UnsupervisedTrainingMixin,
+    # UnsupervisedTrainingMixin,
     ArchesMixin,
     BaseMinifiedModeModelClass,
     RNASeqMixin,
@@ -40,6 +40,7 @@ from scvi.model.utils import get_minified_adata_scrna
 from scvi.utils import setup_anndata_dsp
 from sklearn.neighbors import NearestNeighbors
 
+from ._training_mixin import UnsupervisedTrainingMixin
 from ._module_v11 import nicheVAE
 from ._constants import NICHEVI_REGISTRY_KEYS
 
