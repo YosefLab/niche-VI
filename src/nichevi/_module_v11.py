@@ -624,6 +624,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         inference_outputs: dict[str, torch.Tensor | Distribution | None],
         generative_outputs: dict[str, torch.Tensor | Distribution | None],
         kl_weight: float = 1.0,
+        spatial_weight: float = 1.0,
         epsilon: float = 1e-6,
     ) -> LossOutput:
         """Compute the loss."""

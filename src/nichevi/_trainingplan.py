@@ -155,6 +155,12 @@ class TrainingPlan(pl.LightningModule):
         eps: float = 0.01,
         n_steps_kl_warmup: int = None,
         n_epochs_kl_warmup: int = 400,
+        ########################################
+        n_steps_spatial_warmup: int = None,
+        n_epochs_spatial_warmup: int = 400,
+        min_spatial_weight: float = 0.0,
+        max_spatial_weight: float = 1.0,
+        ########################################
         reduce_lr_on_plateau: bool = False,
         lr_factor: float = 0.6,
         lr_patience: int = 30,
@@ -175,6 +181,12 @@ class TrainingPlan(pl.LightningModule):
         self.optimizer_name = optimizer
         self.n_steps_kl_warmup = n_steps_kl_warmup
         self.n_epochs_kl_warmup = n_epochs_kl_warmup
+        ########################################
+        self.n_steps_spatial_warmup = n_steps_spatial_warmup
+        self.n_epochs_spatial_warmup = n_epochs_spatial_warmup
+        self.min_spatial_weight = min_spatial_weight
+        self.max_spatial_weight = max_spatial_weight
+        ########################################
         self.reduce_lr_on_plateau = reduce_lr_on_plateau
         self.lr_factor = lr_factor
         self.lr_patience = lr_patience
@@ -352,6 +364,12 @@ class TrainingPlan(pl.LightningModule):
             kl_weight = self.kl_weight
             self.loss_kwargs.update({"kl_weight": kl_weight})
             self.log("kl_weight", kl_weight, on_step=True, on_epoch=False)
+
+        if "spatial_weight" in self.loss_kwargs:
+            spatial_weight = self.spatial_weight
+            self.loss_kwargs.update({"spatial_weight": spatial_weight})
+            self.log("spatial_weight", spatial_weight, on_step=True, on_epoch=False)
+
         _, _, scvi_loss = self.forward(batch, loss_kwargs=self.loss_kwargs)
         self.log(
             "train_loss",
@@ -436,4 +454,16 @@ class TrainingPlan(pl.LightningModule):
             self.n_steps_kl_warmup,
             self.max_kl_weight,
             self.min_kl_weight,
+        )
+
+    @property
+    def spatial_weight(self):
+        """Scaling factor on spatial loss during training."""
+        return _compute_kl_weight(
+            self.current_epoch,
+            self.global_step,
+            self.n_epochs_spatial_warmup,
+            self.n_steps_spatial_warmup,
+            self.max_spatial_weight,
+            self.min_spatial_weight,
         )
