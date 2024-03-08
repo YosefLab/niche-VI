@@ -83,6 +83,67 @@ def _compute_kl_weight(
     return max_kl_weight
 
 
+def _compute_spatial_weight(
+    epoch: int,
+    step: int,
+    n_epochs_spatial_warmup: Optional[int],
+    n_steps_spatial_warmup: Optional[int],
+    spatial_start: int = 0,
+    max_spatial_weight: float = 1.0,
+    min_spatial_weight: float = 0.0,
+) -> float:
+    """Computes the kl weight for the current step or epoch.
+
+    If both `n_epochs_kl_warmup` and `n_steps_kl_warmup` are None `max_kl_weight` is returned.
+
+    Parameters
+    ----------
+    epoch
+        Current epoch.
+    step
+        Current step.
+    n_epochs_kl_warmup
+        Number of training epochs to scale weight on KL divergences from
+        `min_kl_weight` to `max_kl_weight`
+    n_steps_kl_warmup
+        Number of training steps (minibatches) to scale weight on KL divergences from
+        `min_kl_weight` to `max_kl_weight`
+    spatial_start
+        Epoch or step to start scaling the weight on spatial loss.
+    max_kl_weight
+        Maximum scaling factor on KL divergence during training.
+    min_kl_weight
+        Minimum scaling factor on KL divergence during training.
+    """
+    if min_spatial_weight > max_spatial_weight:
+        raise ValueError(
+            f"min_kl_weight={min_spatial_weight} is larger than max_kl_weight={max_spatial_weight}."
+        )
+
+    slope = max_spatial_weight - min_spatial_weight
+    if n_epochs_spatial_warmup:
+        if epoch < spatial_start:
+            return min_spatial_weight
+
+        if spatial_start <= epoch < n_epochs_spatial_warmup + spatial_start:
+            print("doing the actual thing")
+            return (
+                slope * ((epoch - spatial_start) / n_epochs_spatial_warmup)
+                + min_spatial_weight
+            )
+    elif n_steps_spatial_warmup:
+        if step < spatial_start:
+            return min_spatial_weight
+
+        if spatial_start <= step < n_steps_spatial_warmup + spatial_start:
+            return (
+                slope * ((step - spatial_start) / n_steps_spatial_warmup)
+                + min_spatial_weight
+            )
+
+    return max_spatial_weight
+
+
 class TrainingPlan(pl.LightningModule):
     """Lightning module task to train scvi-tools modules.
 
@@ -158,6 +219,7 @@ class TrainingPlan(pl.LightningModule):
         ########################################
         n_steps_spatial_warmup: int = None,
         n_epochs_spatial_warmup: int = 400,
+        spatial_start: int = 0,
         min_spatial_weight: float = 0.0,
         max_spatial_weight: float = 1.0,
         ########################################
@@ -184,6 +246,7 @@ class TrainingPlan(pl.LightningModule):
         ########################################
         self.n_steps_spatial_warmup = n_steps_spatial_warmup
         self.n_epochs_spatial_warmup = n_epochs_spatial_warmup
+        self.spatial_start = spatial_start
         self.min_spatial_weight = min_spatial_weight
         self.max_spatial_weight = max_spatial_weight
         ########################################
@@ -459,11 +522,12 @@ class TrainingPlan(pl.LightningModule):
     @property
     def spatial_weight(self):
         """Scaling factor on spatial loss during training."""
-        return _compute_kl_weight(
+        return _compute_spatial_weight(
             self.current_epoch,
             self.global_step,
             self.n_epochs_spatial_warmup,
             self.n_steps_spatial_warmup,
+            self.spatial_start,
             self.max_spatial_weight,
             self.min_spatial_weight,
         )
