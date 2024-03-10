@@ -19,7 +19,7 @@ from scvi.module.base import (
 from scvi.nn import one_hot
 
 from ._constants import NICHEVI_MODULE_KEYS, NICHEVI_REGISTRY_KEYS
-from ._components import DirichletDecoder, NicheDecoder
+from ._components import DirichletDecoder, NicheDecoder, NicheDecoderAttention
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +168,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         cell_rec_weight: float = 1.0,
         latent_kl_weight: float = 1.0,
         spatial_weight: float = 1.0,
+        attention_decoder: bool = False,
         ##############################
         encode_covariates: bool = False,
         deeply_inject_covariates: bool = True,
@@ -306,18 +307,37 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
             **_extra_decoder_kwargs,
         )
 
-        self.niche_decoder = NicheDecoder(
-            n_input=n_input_decoder,
-            n_output=n_output_niche,
-            n_niche_components=n_labels,
-            n_cat_list=cat_list,
-            n_layers=n_layers_niche,
-            n_hidden=n_hidden_niche,
-            inject_covariates=deeply_inject_covariates,
-            use_batch_norm=use_batch_norm_decoder,
-            use_layer_norm=use_layer_norm_decoder,
-            **_extra_decoder_kwargs,
-        )
+        if attention_decoder:
+
+            self.niche_decoder = NicheDecoderAttention(
+                n_input=n_input_decoder,
+                n_output=n_output_niche,
+                n_niche_components=n_labels,
+                n_input_attention=n_input_decoder,
+                n_heads=2,
+                n_cat_list=cat_list,
+                n_layers_proj=1,
+                n_hidden_proj=n_hidden_niche,
+                n_layers=n_layers_niche,
+                n_hidden=n_hidden_niche,
+                dropout_rate=dropout_rate,
+                **_extra_decoder_kwargs,
+            )
+
+        else:
+
+            self.niche_decoder = NicheDecoder(
+                n_input=n_input_decoder,
+                n_output=n_output_niche,
+                n_niche_components=n_labels,
+                n_cat_list=cat_list,
+                n_layers=n_layers_niche,
+                n_hidden=n_hidden_niche,
+                inject_covariates=deeply_inject_covariates,
+                use_batch_norm=use_batch_norm_decoder,
+                use_layer_norm=use_layer_norm_decoder,
+                **_extra_decoder_kwargs,
+            )
 
         self.composition_decoder = DirichletDecoder(
             n_input_decoder,
