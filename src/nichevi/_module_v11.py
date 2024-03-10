@@ -314,6 +314,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
                 n_output=n_output_niche,
                 n_niche_components=n_labels,
                 n_input_attention=n_input_decoder,
+                n_latent=n_latent,
                 n_heads=2,
                 n_cat_list=cat_list,
                 n_layers_proj=1,

@@ -126,7 +126,6 @@ def _compute_spatial_weight(
             return min_spatial_weight
 
         if spatial_start <= epoch < n_epochs_spatial_warmup + spatial_start:
-            print("doing the actual thing")
             return (
                 slope * ((epoch - spatial_start) / n_epochs_spatial_warmup)
                 + min_spatial_weight
