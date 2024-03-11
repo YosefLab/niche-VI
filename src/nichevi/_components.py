@@ -261,7 +261,7 @@ class NicheDecoderAttention(nn.Module):
         dropout_rate: float = 0.1,
         **kwargs,
     ):
-        super(NicheDecoderAttention, self).__init__()
+        super().__init__()
 
         # standard scvi decoder > z_ = MLP(z | batch)
         # batch token?
@@ -273,11 +273,16 @@ class NicheDecoderAttention(nn.Module):
             n_cat_list=n_cat_list,
             n_layers=n_layers_proj,
             n_hidden=n_hidden_proj,
-            use_activation=False,
+            use_activation=True,
             use_batch_norm=False,
             use_layer_norm=True,
             dropout_rate=dropout_rate,
             **kwargs,
+        )
+
+        self.z_proj_linear = nn.Sequential(
+            nn.Linear(n_input_attention, n_input_attention),
+            nn.LayerNorm(n_input_attention),
         )
 
         self.cell_type_embedding = nn.Embedding(
@@ -301,8 +306,9 @@ class NicheDecoderAttention(nn.Module):
             # + (
             #     n_input_attention - n_latent
             # ),  # n_latent is the size of the latent space
-            n_out=n_input_attention,
+            # n_cat_list=n_cat_list,
             n_cat_list=None,
+            n_out=n_input_attention,
             n_layers=n_layers,
             n_hidden=n_hidden,
             dropout_rate=dropout_rate,
@@ -325,6 +331,7 @@ class NicheDecoderAttention(nn.Module):
 
         # Project the input
         z_proj = self.z_proj(z, *cat_list)
+        z_proj = self.z_proj_linear(z_proj)
 
         # Embed all the cell types
         cell_type_embedding = self.layer_norm_cell_type_embedding(
@@ -347,7 +354,7 @@ class NicheDecoderAttention(nn.Module):
         attention_output = self.layer_norm_attention_module(attention_output + qkv)
 
         # Decode the attention output
-        decoded = self.decoder(attention_output)  # , *cat_list)
+        decoded = self.decoder(attention_output, *cat_list)
 
         # Apply layer norm
         p = self.layer_norm_decoder(decoded + attention_output)
