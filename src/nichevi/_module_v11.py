@@ -169,6 +169,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         latent_kl_weight: float = 1.0,
         spatial_weight: float = 1.0,
         attention_decoder: bool = False,
+        n_heads: int = 2,
         ##############################
         encode_covariates: bool = False,
         deeply_inject_covariates: bool = True,
@@ -204,6 +205,8 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         self.spatial_weight = spatial_weight
         self.n_output_niche = n_output_niche
         self.niche_likelihood = niche_likelihood
+        self.attention_decoder = attention_decoder
+        self.n_heads = n_heads
 
         if not self.use_observed_lib_size:
             if library_log_means is None or library_log_vars is None:
@@ -315,7 +318,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
                 n_niche_components=n_labels,
                 n_input_attention=n_input_decoder,
                 n_latent=n_latent,
-                n_heads=2,
+                n_heads=n_heads,
                 n_cat_list=cat_list,
                 n_layers_proj=1,
                 n_hidden_proj=n_hidden_niche,
@@ -702,8 +705,12 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         composition_loss = -reconst_niche_composition.log_prob(true_niche_composition)
 
         _weighted_reconst_loss_cell = self.cell_rec_weight * reconst_loss_cell
-        _weighted_reconst_loss_niche = self.spatial_weight * masked_reconst_loss_niche
-        _weighted_composition_loss = self.spatial_weight * composition_loss
+        _weighted_reconst_loss_niche = (
+            spatial_weight * self.spatial_weight * masked_reconst_loss_niche
+        )
+        _weighted_composition_loss = (
+            spatial_weight * self.spatial_weight * composition_loss
+        )
         _weighted_kl_local = self.latent_kl_weight * weighted_kl_local
 
         loss = torch.mean(
@@ -727,6 +734,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
                 NICHEVI_MODULE_KEYS.NLL_NICHE_EXPRESSION_KEY: torch.mean(
                     masked_reconst_loss_niche
                 ),
+                "spatial_weight": spatial_weight,
             },
         )
 
