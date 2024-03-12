@@ -116,6 +116,7 @@ def _compute_spatial_weight(
     min_kl_weight
         Minimum scaling factor on KL divergence during training.
     """
+
     if min_spatial_weight > max_spatial_weight:
         raise ValueError(
             f"min_kl_weight={min_spatial_weight} is larger than max_kl_weight={max_spatial_weight}."
@@ -273,6 +274,8 @@ class TrainingPlan(pl.LightningModule):
         self._loss_args = set(signature(self.module.loss).parameters.keys())
         if "kl_weight" in self._loss_args:
             self.loss_kwargs.update({"kl_weight": self.kl_weight})
+        if "spatial_weight" in self._loss_args:
+            self.loss_kwargs.update({"spatial_weight": self.spatial_weight})
 
         self.initialize_train_metrics()
         self.initialize_val_metrics()

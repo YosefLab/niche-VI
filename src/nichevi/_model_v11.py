@@ -8,6 +8,7 @@ from rich import print
 import numpy as np
 import pandas as pd
 from anndata import AnnData
+import torch
 
 from scvi import REGISTRY_KEYS, settings
 from scvi._types import MinifiedDataType
@@ -412,6 +413,63 @@ class nicheSCVI(
             minified_adata, minified_data_type
         )
         self.module.minified_data_type = minified_data_type
+
+    @torch.inference_mode()
+    def get_niche_attention(
+        self,
+        adata: AnnData | None = None,
+        indices: np.ndarray | None = None,
+        batch_size: int = 128,
+    ) -> np.ndarray:
+        """
+        Parameters
+        ----------
+
+        adata
+            AnnData object. If ``None``, the model's ``adata`` will be used.
+        indices
+            Indices of cells to use. If ``None``, all cells will be used.
+        batch_size
+            Minibatch size to use during inference.
+
+        Returns
+        -------
+        niche_attention
+            Attention weights for each cell in the dataset.
+        """
+
+        self._check_if_trained(warn=False)
+
+        adata = self._validate_anndata(adata)
+        scdl = self._make_data_loader(
+            adata=adata, indices=indices, batch_size=batch_size
+        )
+
+        if self.module.attention_decoder == False:
+            raise ValueError(
+                "The model was not trained with the attention_decoder parameter set to True. "
+                "Please retrain the model with the attention_decoder parameter set to True."
+            )
+
+        attention_weights = []
+        for tensors in scdl:
+            inference_inputs = self.module._get_inference_input(tensors)
+            outputs = self.module.inference(**inference_inputs)
+
+            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
+            decoder_input = outputs["qz"].loc
+
+            # put batch_index in the same device as decoder_input
+            batch_index = batch_index.to(decoder_input.device)
+
+            niche_mean, niche_variance, niche_attention = self.module.niche_decoder(
+                decoder_input,
+                batch_index,
+            )
+
+            attention_weights.append(niche_attention.detach().cpu())
+
+        return torch.cat(attention_weights).numpy()
 
 
 def get_niche_indexes(

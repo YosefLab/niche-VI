@@ -348,10 +348,15 @@ class NicheDecoderAttention(nn.Module):
         qkv = torch.cat([z_proj, cell_type_embedding], dim=1)
 
         # Apply the attention mechanism
-        attention_output, _ = self.attention_module(qkv, qkv, qkv)
+        attention_output, attention_weights = self.attention_module(qkv, qkv, qkv)
 
         # Apply layer norm
         attention_output = self.layer_norm_attention_module(attention_output + qkv)
+
+        # cat_list = list(cat_list)
+        # cat_list[0] = cat_list[0][:, None, ...].expand(
+        #     attention_output.size(0), attention_output.size(1), 1
+        # )
 
         # Decode the attention output
         decoded = self.decoder(attention_output, *cat_list)
@@ -366,4 +371,4 @@ class NicheDecoderAttention(nn.Module):
         p_m, p_v = self.dist_decoder(p[:, 1:, :]).chunk(2, dim=-1)
         p_v = torch.nn.Softplus()(p_v) + eps
 
-        return p_m, p_v
+        return p_m, p_v, attention_weights

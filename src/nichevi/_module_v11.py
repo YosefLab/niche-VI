@@ -311,7 +311,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
             **_extra_decoder_kwargs,
         )
 
-        if attention_decoder:
+        if self.attention_decoder:
 
             self.niche_decoder = NicheDecoderAttention(
                 n_input=n_input_decoder,
@@ -619,9 +619,25 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
             pl = Normal(local_library_log_means, local_library_log_vars.sqrt())
         pz = Normal(torch.zeros_like(z), torch.ones_like(z))
 
-        niche_mean, niche_variance = self.niche_decoder(
+        niche_composition = self.composition_decoder(
             decoder_input, batch_index, *categorical_input
-        )
+        )  # DirichletDecoder, niche_composition is a distribution
+
+        if self.attention_decoder:
+            if self.batch_representation == "embedding":
+                niche_mean, niche_variance, niche_attention = self.niche_decoder(
+                    decoder_input, *categorical_input
+                )
+            else: # one-hot
+                niche_mean, niche_variance, niche_attention = self.niche_decoder(
+                    decoder_input, batch_index, *categorical_input
+                )
+
+        else:
+            niche_mean, niche_variance = self.niche_decoder(
+                decoder_input, batch_index, *categorical_input
+            )
+            niche_attention = None
 
         if self.niche_likelihood == "poisson":
             niche_expression = torch.distributions.Poisson(niche_variance)
@@ -629,16 +645,13 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         else:
             niche_expression = Normal(niche_mean, niche_variance.sqrt())
 
-        niche_composition = self.composition_decoder(
-            decoder_input, batch_index, *categorical_input
-        )  # DirichletDecoder, niche_composition is a distribution
-
         return {
             MODULE_KEYS.PX_KEY: px,
             MODULE_KEYS.PL_KEY: pl,
             MODULE_KEYS.PZ_KEY: pz,
             NICHEVI_MODULE_KEYS.NICHE_MEAN: niche_mean,
             NICHEVI_MODULE_KEYS.NICHE_VARIANCE: niche_variance,
+            NICHEVI_MODULE_KEYS.NICHE_ATTENTION: niche_attention,
             NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION: niche_expression,
             NICHEVI_MODULE_KEYS.P_NICHE_COMPOSITION: niche_composition,
         }

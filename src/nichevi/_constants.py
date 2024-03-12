@@ -18,6 +18,7 @@ class _NICHEVI_MODULE_KEYS(NamedTuple):
     NICHE_VARIANCE: str = "niche_variance"
     P_NICHE_COMPOSITION: str = "niche_composition"
     P_NICHE_EXPRESSION: str = "niche_expression"
+    NICHE_ATTENTION: str = "niche_attention"
     # loss
     NLL_NICHE_COMPOSITION_KEY: str = "niche_compo"
     NLL_NICHE_EXPRESSION_KEY: str = "niche_reconst"
