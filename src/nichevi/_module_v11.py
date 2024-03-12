@@ -19,7 +19,7 @@ from scvi.module.base import (
 from scvi.nn import one_hot
 
 from ._constants import NICHEVI_MODULE_KEYS, NICHEVI_REGISTRY_KEYS
-from ._components import DirichletDecoder, NicheDecoder, NicheDecoderAttention
+from ._components import DirichletDecoder, NicheDecoder, NicheDecoderAttention, Encoder
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,8 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         extra_decoder_kwargs: dict | None = None,
         batch_embedding_kwargs: dict | None = None,
     ):
-        from scvi.nn import DecoderSCVI, Encoder
+        # from scvi.nn import DecoderSCVI, Encoder
+        from scvi.nn import DecoderSCVI
 
         super().__init__()
 

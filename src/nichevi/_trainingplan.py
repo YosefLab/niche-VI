@@ -68,6 +68,7 @@ def _compute_kl_weight(
     min_kl_weight
         Minimum scaling factor on KL divergence during training.
     """
+
     if min_kl_weight > max_kl_weight:
         raise ValueError(
             f"min_kl_weight={min_kl_weight} is larger than max_kl_weight={max_kl_weight}."
