@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from anndata import AnnData
 import torch
+import scipy.sparse as sp
 
 from scvi import REGISTRY_KEYS, settings
 from scvi._types import MinifiedDataType
@@ -470,6 +471,49 @@ class nicheSCVI(
             attention_weights.append(niche_attention.detach().cpu())
 
         return torch.cat(attention_weights).numpy()
+
+
+def corrupt_counts(
+    adata: AnnData,
+    niche_indexes_key: str,
+    niche_distances_key: str,
+    add_layer: str = "corrupted_counts",
+    k_nn: int = 7,
+    use_layer: str | None = None,
+    bandwidth: Literal["mean", "median", "none"] = "median",
+    save_weights: bool = False,
+):
+    distance_matrix = adata.obsm[niche_distances_key][:, :k_nn]
+    idx = adata.obsm[niche_indexes_key][:, :k_nn]
+
+    if bandwidth == "mean":
+        bandwidth = np.mean(distance_matrix, axis=1)
+    elif bandwidth == "median":
+        bandwidth = np.median(distance_matrix, axis=1)
+    else:
+        bandwidth = np.ones(distance_matrix.shape[0])
+
+    if use_layer is not None:
+        counts = adata.layers[use_layer].copy()
+    else:
+        counts = adata.X.copy()
+
+    if sp.issparse(counts):
+        counts = counts.toarray()
+
+    _exp_argument = -0.5 * (distance_matrix / bandwidth[:, None]) ** 2
+    _exp_argument = np.exp(_exp_argument)
+
+    weighted_neighbors = np.einsum("ij,ijk->ik", _exp_argument, counts[idx])
+
+    corrupted_counts = weighted_neighbors + counts
+
+    adata.layers[add_layer] = sp.csr_matrix(corrupted_counts)
+
+    if save_weights:
+        adata.obsm["corruption_weights"] = _exp_argument
+
+    return None
 
 
 def get_niche_indexes(
