@@ -317,8 +317,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
                 n_input=n_input_decoder,
                 n_output=n_output_niche,
                 n_niche_components=n_labels,
-                n_input_attention=n_input_decoder,
-                n_latent=n_latent,
+                n_input_attention=n_heads * n_input_decoder,
                 n_heads=n_heads,
                 n_cat_list=cat_list,
                 n_layers_proj=1,
@@ -628,7 +627,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
                 niche_mean, niche_variance, niche_attention = self.niche_decoder(
                     decoder_input, *categorical_input
                 )
-            else: # one-hot
+            else:  # one-hot
                 niche_mean, niche_variance, niche_attention = self.niche_decoder(
                     decoder_input, batch_index, *categorical_input
                 )
@@ -748,7 +747,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
                 NICHEVI_MODULE_KEYS.NLL_NICHE_EXPRESSION_KEY: torch.mean(
                     masked_reconst_loss_niche
                 ),
-                "spatial_weight": spatial_weight,
+                NICHEVI_MODULE_KEYS.SPATIAL_WEIGHT_KEY: spatial_weight,
             },
         )
 

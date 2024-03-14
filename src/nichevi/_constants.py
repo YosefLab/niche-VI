@@ -22,6 +22,7 @@ class _NICHEVI_MODULE_KEYS(NamedTuple):
     # loss
     NLL_NICHE_COMPOSITION_KEY: str = "niche_compo"
     NLL_NICHE_EXPRESSION_KEY: str = "niche_reconst"
+    SPATIAL_WEIGHT_KEY: str = "spatial_weight"
 
 
 NICHEVI_MODULE_KEYS = _NICHEVI_MODULE_KEYS()

@@ -251,7 +251,6 @@ class NicheDecoderAttention(nn.Module):
         n_output: int,
         n_niche_components: int,
         n_input_attention: int,  # Size of the attention layer, should be equal to n_input as we add the attention to the input
-        n_latent: int,
         n_heads: int = 1,
         n_cat_list: Iterable[int] = None,
         n_layers_proj: int = 1,
@@ -303,9 +302,6 @@ class NicheDecoderAttention(nn.Module):
 
         self.decoder = FCLayers(
             n_in=n_input_attention,
-            # + (
-            #     n_input_attention - n_latent
-            # ),  # n_latent is the size of the latent space
             # n_cat_list=n_cat_list,
             n_cat_list=None,
             n_out=n_input_attention,
