@@ -219,6 +219,8 @@ class nicheSCVI(
         niche_type_key: str | None = None,
         niche_treshold: float | None = 0.2,
         cell_type_for_niches: list[str] | None = None,
+        ###########
+        log1p: bool = False,
     ):
         adata.obsm[niche_indexes_key] = np.zeros(
             (adata.n_obs, k_nn)
@@ -261,6 +263,7 @@ class nicheSCVI(
             niche_indexes_key=niche_indexes_key,
             latent_mean_key=latent_mean_key,
             latent_mean_ct_key=latent_mean_niche_key,
+            log1p=log1p,
         )
 
         return None
@@ -420,7 +423,7 @@ class nicheSCVI(
         self,
         adata: AnnData | None = None,
         indices: np.ndarray | None = None,
-        batch_size: int = 128,
+        batch_size: int = 1024,
     ) -> np.ndarray:
         """
         Parameters
@@ -651,6 +654,7 @@ def get_average_latent_per_celltype(
     niche_indexes_key: str,
     latent_mean_key: str | None = None,
     latent_mean_ct_key: str = "qz1_m_niche_ct",
+    log1p: bool = False,
 ):
     # for each cell, take the average of the latent space for each label, namely the label-averaged latent_mean obsm
 
@@ -666,7 +670,11 @@ def get_average_latent_per_celltype(
     n_latent_z1 = adata.obsm[latent_mean_key].shape[1]
     niche_indexes = adata.obsm[niche_indexes_key]
 
-    z1_mean_niches = adata.obsm[latent_mean_key][niche_indexes]
+    if log1p:
+        z1_mean_niches = np.log1p(adata.obsm[latent_mean_key])[niche_indexes]
+
+    else:
+        z1_mean_niches = adata.obsm[latent_mean_key][niche_indexes]
 
     cell_types = adata.obs[labels_key].unique().tolist()
 
