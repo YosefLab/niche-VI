@@ -475,47 +475,41 @@ class nicheSCVI(
 
         return torch.cat(attention_weights).numpy()
 
-    def corrupt_counts(
-        adata: AnnData,
-        niche_indexes_key: str,
-        niche_distances_key: str,
-        add_layer: str = "corrupted_counts",
-        k_nn: int = 7,
-        use_layer: str | None = None,
-        bandwidth: Literal["mean", "median", "none"] = "median",
-        save_weights: bool = False,
+    def get_cell_type_attention(
+        self,
+        adata: AnnData | None = None,
+        attention_key: str = "attention_weights",
+        cell_type_key: str = "cell_type",
+        compute_attention: bool = True,
     ):
-        distance_matrix = adata.obsm[niche_distances_key][:, :k_nn]
-        idx = adata.obsm[niche_indexes_key][:, :k_nn]
 
-        if bandwidth == "mean":
-            bandwidth = np.mean(distance_matrix, axis=1)
-        elif bandwidth == "median":
-            bandwidth = np.median(distance_matrix, axis=1)
+        if self.module.attention_decoder == False:
+            raise ValueError(
+                "The model was not trained with the attention_decoder parameter set to True. "
+                "Please retrain the model with the attention_decoder parameter set to True."
+            )
+
+        self._check_if_trained(warn=False)
+
+        adata = self._validate_anndata(adata)
+
+        cell_types = adata.obs[cell_type_key].unique().tolist()
+        cell_type_to_int = {cell_types[i]: i for i in range(len(cell_types))}
+
+        if compute_attention:
+            attention_weights = self.get_niche_attention(adata=adata)
+
         else:
-            bandwidth = np.ones(distance_matrix.shape[0])
+            attention_weights = adata.obsm[attention_key]
 
-        if use_layer is not None:
-            counts = adata.layers[use_layer].copy()
-        else:
-            counts = adata.X.copy()
+        attention_weights = attention_weights[:, 1:, 1:]
 
-        if sp.issparse(counts):
-            counts = counts.toarray()
+        token_attention_weights = {
+            token_name: attention_weights[:, token_idx, :]
+            for token_name, token_idx in cell_type_to_int.items()
+        }
 
-        _exp_argument = -0.5 * (distance_matrix / bandwidth[:, None]) ** 2
-        _exp_argument = np.exp(_exp_argument)
-
-        weighted_neighbors = np.einsum("ij,ijk->ik", _exp_argument, counts[idx])
-
-        corrupted_counts = weighted_neighbors + counts
-
-        adata.layers[add_layer] = sp.csr_matrix(corrupted_counts)
-
-        if save_weights:
-            adata.obsm["corruption_weights"] = _exp_argument
-
-        return None
+        return token_attention_weights
 
 
 def get_niche_indexes(
