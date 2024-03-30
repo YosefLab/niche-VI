@@ -168,6 +168,9 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         cell_rec_weight: float = 1.0,
         latent_kl_weight: float = 1.0,
         spatial_weight: float = 1.0,
+        niche_rec_weight: float = 1.0,
+        compo_rec_weight: float = 1.0,
+        ##############################
         attention_decoder: bool = False,
         n_heads: int = 2,
         ##############################
@@ -204,6 +207,10 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         self.latent_kl_weight = latent_kl_weight
         self.cell_rec_weight = cell_rec_weight
         self.spatial_weight = spatial_weight
+        ##############################
+        self.niche_rec_weight = niche_rec_weight
+        self.compo_rec_weight = compo_rec_weight
+        ##############################
         self.n_output_niche = n_output_niche
         self.niche_likelihood = niche_likelihood
         self.attention_decoder = attention_decoder
@@ -719,10 +726,10 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
 
         _weighted_reconst_loss_cell = self.cell_rec_weight * reconst_loss_cell
         _weighted_reconst_loss_niche = (
-            spatial_weight * self.spatial_weight * masked_reconst_loss_niche
+            spatial_weight * self.niche_rec_weight * masked_reconst_loss_niche
         )
         _weighted_composition_loss = (
-            spatial_weight * self.spatial_weight * composition_loss
+            spatial_weight * self.compo_rec_weight * composition_loss
         )
         _weighted_kl_local = self.latent_kl_weight * weighted_kl_local
 
