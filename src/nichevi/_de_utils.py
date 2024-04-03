@@ -1,7 +1,8 @@
-from typing import Optional, Literal
-import scipy.sparse as sp
-import numpy as np
+from typing import Literal
+
 import anndata as ad
+import numpy as np
+import scipy.sparse as sp
 from scipy.sparse import csr_matrix
 
 
@@ -74,3 +75,61 @@ def corrupt_counts(
         adata.obsm["corruption_weights"] = _exp_argument
 
     return None
+
+
+def adjusted_nearest_neighbors(
+    adata: ad.AnnData,
+    sample_key: str,
+    cell_coordinates_key: str,
+    label_key: str,
+    radius: int | None = None,
+    k_nn: int | None = None,
+):
+    from sklearn.neighbors import NearestNeighbors
+
+    adata.obs["index"] = np.arange(adata.shape[0])
+    cell_types = adata.obs[label_key]
+
+
+    # build a dictionnary giving the index of each 'donor_slice' observation:
+    donor_slice_index = {}
+    for sample in adata.obs[sample_key].unique():
+        donor_slice_index[sample] = adata.obs[adata.obs[sample_key] == sample][
+            "index"
+        ].values
+
+    for sample in adata.obs[sample_key].unique():
+        sample_coord = adata.obsm[cell_coordinates_key][adata.obs[sample_key] == sample]
+
+        if radius is not None:
+            nn = NearestNeighbors(radius=radius)
+            nn.fit(sample_coord)
+            A = nn.radius_neighbors_graph(sample_coord)
+        elif k_nn is not None:
+            nn = NearestNeighbors(n_neighbors=k_nn)
+            nn.fit(sample_coord)
+            A = nn.kneighbors_graph(sample_coord)
+        else:
+            raise ValueError("Either radius or k_nn must be provided.")
+
+        # Create a NearestNeighbors object
+        knn = NearestNeighbors(n_neighbors=k_nn + 1)
+
+        # Fit the kNN model to the points
+        knn.fit(sample_coord)
+
+        # Find the indices of the kNN for each point
+        distances, indices = knn.kneighbors(sample_coord)
+
+        # Store the indices in the adata object
+        sample_global_index = donor_slice_index[sample][indices].astype(int)
+
+        adata.obsm[niche_indexes_key][adata.obs[sample_key] == sample] = (
+            sample_global_index[:, 1:]
+        )
+
+        adata.obsm[niche_indexes_key] = adata.obsm[niche_indexes_key].astype(int)
+
+        adata.obsm[niche_distances_key][adata.obs[sample_key] == sample] = distances[
+            :, 1:
+        ]

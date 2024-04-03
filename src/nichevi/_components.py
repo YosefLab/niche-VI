@@ -1,6 +1,5 @@
 from collections.abc import Iterable
-
-from typing import Tuple, Optional, Callable
+from typing import Callable, Optional, Tuple
 
 import torch
 from scvi.nn import Decoder, FCLayers

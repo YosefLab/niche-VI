@@ -6,8 +6,6 @@ from typing import Callable, Literal
 
 import numpy as np
 import torch
-from torch.distributions import Distribution
-
 from scvi import REGISTRY_KEYS, settings
 from scvi.module._constants import MODULE_KEYS
 from scvi.module.base import (
@@ -17,9 +15,10 @@ from scvi.module.base import (
     auto_move_data,
 )
 from scvi.nn import one_hot
+from torch.distributions import Distribution
 
+from ._components import DirichletDecoder, Encoder, NicheDecoder, NicheDecoderAttention
 from ._constants import NICHEVI_MODULE_KEYS, NICHEVI_REGISTRY_KEYS
-from ._components import DirichletDecoder, NicheDecoder, NicheDecoderAttention, Encoder
 
 logger = logging.getLogger(__name__)
 
@@ -540,14 +539,13 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         transform_batch: torch.Tensor | None = None,
     ) -> dict[str, Distribution | None]:
         """Run the generative process."""
-        from torch.distributions import Normal
-        from torch.nn.functional import linear
-
         from scvi.distributions import (
             NegativeBinomial,
             Poisson,
             ZeroInflatedNegativeBinomial,
         )
+        from torch.distributions import Normal
+        from torch.nn.functional import linear
 
         # TODO: refactor forward function to not rely on y
         # Likelihood distribution

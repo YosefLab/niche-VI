@@ -1,11 +1,8 @@
 from typing import List, Tuple
 
-import matplotlib.pyplot as plt
-
 import numpy as np
 import pandas as pd
 from anndata import AnnData
-
 
 
 def compute_jaccard(
@@ -14,10 +11,7 @@ def compute_jaccard(
     key2: str,
     jaccard: bool = True,
 ) -> pd.DataFrame:
-    """
-    Compute the Jaccard index between two leiden clusterings
-    """
-
+    """Compute the Jaccard index between two leiden clusterings"""
     if jaccard:
         dict_1 = {}
 

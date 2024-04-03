@@ -3,14 +3,12 @@ from __future__ import annotations
 import logging
 import warnings
 from typing import Literal
-from rich import print
 
 import numpy as np
 import pandas as pd
-from anndata import AnnData
 import torch
-import scipy.sparse as sp
-
+from anndata import AnnData
+from rich import print
 from scvi import REGISTRY_KEYS, settings
 from scvi._types import MinifiedDataType
 from scvi.data import AnnDataManager
@@ -27,25 +25,21 @@ from scvi.data.fields import (
     StringUnsField,
 )
 from scvi.model._utils import _init_library_size
-from scvi.model.utils import get_minified_adata_scrna
-from scvi.utils import setup_anndata_dsp
-
 from scvi.model.base import (
-    EmbeddingMixin,
     # UnsupervisedTrainingMixin,
     ArchesMixin,
     BaseMinifiedModeModelClass,
+    EmbeddingMixin,
     RNASeqMixin,
     VAEMixin,
 )
-
 from scvi.model.utils import get_minified_adata_scrna
 from scvi.utils import setup_anndata_dsp
 from sklearn.neighbors import NearestNeighbors
 
-from ._training_mixin import UnsupervisedTrainingMixin
-from ._module_v11 import nicheVAE
 from ._constants import NICHEVI_REGISTRY_KEYS
+from ._module_v11 import nicheVAE
+from ._training_mixin import UnsupervisedTrainingMixin
 
 _SCVI_LATENT_QZM = "_scvi_latent_qzm"
 _SCVI_LATENT_QZV = "_scvi_latent_qzv"
@@ -425,10 +419,10 @@ class nicheSCVI(
         indices: np.ndarray | None = None,
         batch_size: int = 1024,
     ) -> np.ndarray:
-        """
+        """description
+
         Parameters
         ----------
-
         adata
             AnnData object. If ``None``, the model's ``adata`` will be used.
         indices
@@ -441,7 +435,6 @@ class nicheSCVI(
         niche_attention
             Attention weights for each cell in the dataset.
         """
-
         self._check_if_trained(warn=False)
 
         adata = self._validate_anndata(adata)
@@ -449,7 +442,7 @@ class nicheSCVI(
             adata=adata, indices=indices, batch_size=batch_size
         )
 
-        if self.module.attention_decoder == False:
+        if self.module.attention_decoder is False:
             raise ValueError(
                 "The model was not trained with the attention_decoder parameter set to True. "
                 "Please retrain the model with the attention_decoder parameter set to True."
@@ -482,8 +475,7 @@ class nicheSCVI(
         cell_type_key: str = "cell_type",
         compute_attention: bool = True,
     ):
-
-        if self.module.attention_decoder == False:
+        if self.module.attention_decoder is False:
             raise ValueError(
                 "The model was not trained with the attention_decoder parameter set to True. "
                 "Please retrain the model with the attention_decoder parameter set to True."
