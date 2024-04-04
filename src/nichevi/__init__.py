@@ -1,14 +1,12 @@
 from importlib.metadata import version
 
-from ._model_v11 import nicheSCVI
-from ._module_v11 import nicheVAE
-
-from ._components import NicheDecoder, DirichletDecoder
-
-
+from ._components import DirichletDecoder, NicheDecoder
 from ._de_utils import (
+    adjusted_nearest_neighbors,
     corrupt_counts,
 )
+from ._model_v11 import nicheSCVI
+from ._module_v11 import nicheVAE
 
 __all__ = [
     "nicheSCVI",
@@ -16,6 +14,7 @@ __all__ = [
     "NicheDecoder",
     "DirichletDecoder",
     "corrupt_counts",
+    "adjusted_nearest_neighbors",
 ]
 
 __version__ = version("niche-VI")

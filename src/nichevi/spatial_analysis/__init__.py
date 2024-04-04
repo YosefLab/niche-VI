@@ -3,7 +3,6 @@ from .metrics import (
     compute_k_nn,
     compute_similarity,
 )
-
 from .visualization import (
     compute_jaccard,
 )

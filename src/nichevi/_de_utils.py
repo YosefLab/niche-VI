@@ -2,6 +2,7 @@ from typing import Literal
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 import scipy.sparse as sp
 from scipy.sparse import csr_matrix
 
@@ -84,52 +85,63 @@ def adjusted_nearest_neighbors(
     label_key: str,
     radius: int | None = None,
     k_nn: int | None = None,
+    return_sparse: bool = True,
 ):
+    from scipy.sparse import block_diag
     from sklearn.neighbors import NearestNeighbors
 
-    adata.obs["index"] = np.arange(adata.shape[0])
     cell_types = adata.obs[label_key]
-
-
-    # build a dictionnary giving the index of each 'donor_slice' observation:
-    donor_slice_index = {}
-    for sample in adata.obs[sample_key].unique():
-        donor_slice_index[sample] = adata.obs[adata.obs[sample_key] == sample][
-            "index"
-        ].values
+    adjacency_matrices = []
 
     for sample in adata.obs[sample_key].unique():
         sample_coord = adata.obsm[cell_coordinates_key][adata.obs[sample_key] == sample]
+        sample_cell_types = cell_types[adata.obs[sample_key] == sample]
+
+        # build a dict of masks for each cell type
+        cell_type_masks = {
+            cell_type: (sample_cell_types != cell_type).values
+            for cell_type in sample_cell_types.unique()
+        }
+
+        # make it a df
+        cell_type_masks_df = pd.DataFrame(cell_type_masks).transpose()
+
+        # then build the mask matrix of the sample
+        mask_matrix = cell_type_masks_df.loc[sample_cell_types].values
 
         if radius is not None:
             nn = NearestNeighbors(radius=radius)
             nn.fit(sample_coord)
             A = nn.radius_neighbors_graph(sample_coord)
         elif k_nn is not None:
-            nn = NearestNeighbors(n_neighbors=k_nn)
+            nn = NearestNeighbors(n_neighbors=k_nn + 1)
             nn.fit(sample_coord)
             A = nn.kneighbors_graph(sample_coord)
         else:
             raise ValueError("Either radius or k_nn must be provided.")
 
-        # Create a NearestNeighbors object
-        knn = NearestNeighbors(n_neighbors=k_nn + 1)
+        A_adjusted = A.multiply(mask_matrix)
 
-        # Fit the kNN model to the points
-        knn.fit(sample_coord)
+        A_adjusted.eliminate_zeros()
 
-        # Find the indices of the kNN for each point
-        distances, indices = knn.kneighbors(sample_coord)
+        adjacency_matrices.append(A_adjusted.astype(bool, copy=False))
 
-        # Store the indices in the adata object
-        sample_global_index = donor_slice_index[sample][indices].astype(int)
+    adjacency_matrix = block_diag(adjacency_matrices, format="csr")
 
-        adata.obsm[niche_indexes_key][adata.obs[sample_key] == sample] = (
-            sample_global_index[:, 1:]
-        )
+    if return_sparse:
+        return adjacency_matrix
 
-        adata.obsm[niche_indexes_key] = adata.obsm[niche_indexes_key].astype(int)
+    return adjacency_matrix.toarray()
 
-        adata.obsm[niche_distances_key][adata.obs[sample_key] == sample] = distances[
-            :, 1:
-        ]
+
+def get_nonzero_indices_from_rows(csr_matrix, row_list):
+    # Convert the row list to a NumPy array
+    row_array = np.array(row_list)
+
+    # Create a boolean mask for the rows of interest
+    row_mask = np.isin(csr_matrix.indices, row_array)
+
+    # Get the non-zero column indices for the rows of interest
+    nonzero_indices = csr_matrix.indices[row_mask]
+
+    return nonzero_indices
