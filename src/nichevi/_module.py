@@ -1,193 +1,220 @@
-"""Main module."""
+from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
-from typing import Callable, Literal, Optional
+import warnings
+from typing import Callable, Literal
 
 import numpy as np
 import torch
-import torch.nn.functional as F
-from scvi import REGISTRY_KEYS
-from scvi.autotune._types import Tunable
-from scvi.data._constants import ADATA_MINIFY_TYPE
-from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
-from scvi.module.base import BaseMinifiedModeModuleClass, LossOutput, auto_move_data
-from scvi.nn import (
-    DecoderSCVI,
-    Encoder,
-    one_hot,
+from scvi import REGISTRY_KEYS, settings
+from scvi.module._constants import MODULE_KEYS
+from scvi.module.base import (
+    BaseMinifiedModeModuleClass,
+    EmbeddingModuleMixin,
+    LossOutput,
+    auto_move_data,
 )
-from torch import logsumexp
-from torch.distributions import Normal
-from torch.distributions import kl_divergence as kl
+from scvi.nn import one_hot
+from torch.distributions import Distribution
 
-from ._components import DirichletDecoder, NicheDecoder
-from ._constants import NICHEVI_REGISTRY_KEYS
-
-torch.backends.cudnn.benchmark = True
+from ._components import DirichletDecoder, Encoder, NicheDecoder, NicheDecoderAttention
+from ._constants import NICHEVI_MODULE_KEYS, NICHEVI_REGISTRY_KEYS
 
 logger = logging.getLogger(__name__)
 
 
-class nicheVAE(BaseMinifiedModeModuleClass):
-    """Variational auto-encoder model.
-
-    This is an implementation of the scVI model described in :cite:p:`Lopez18`.
+class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
+    """Variational auto-encoder :cite:p:`Lopez18`.
 
     Parameters
     ----------
     n_input
-        Number of input genes
+        Number of input features.
     n_batch
-        Number of batches, if 0, no batch correction is performed.
+        Number of batches. If ``0``, no batch correction is performed.
     n_labels
-        Number of labels
+        Number of labels.
     n_hidden
-        Number of nodes per hidden layer
+        Number of nodes per hidden layer. Passed into :class:`~scvi.nn.Encoder` and
+        :class:`~scvi.nn.DecoderSCVI`.
     n_latent
-        Dimensionality of the latent space
+        Dimensionality of the latent space.
     n_layers
-        Number of hidden layers used for encoder and decoder NNs
+        Number of hidden layers. Passed into :class:`~scvi.nn.Encoder` and
+        :class:`~scvi.nn.DecoderSCVI`.
     n_continuous_cov
-        Number of continuous covarites
+        Number of continuous covariates.
     n_cats_per_cov
-        Number of categories for each extra categorical covariate
+        A list of integers containing the number of categories for each categorical covariate.
     dropout_rate
-        Dropout rate for neural networks
+        Dropout rate. Passed into :class:`~scvi.nn.Encoder` but not :class:`~scvi.nn.DecoderSCVI`.
     dispersion
-        One of the following
+        Flexibility of the dispersion parameter when ``gene_likelihood`` is either ``"nb"`` or
+        ``"zinb"``. One of the following:
 
-        * ``'gene'`` - dispersion parameter of NB is constant per gene across cells
-        * ``'gene-batch'`` - dispersion can differ between different batches
-        * ``'gene-label'`` - dispersion can differ between different labels
-        * ``'gene-cell'`` - dispersion can differ for every gene in every cell
+        * ``"gene"``: parameter is constant per gene across cells.
+        * ``"gene-batch"``: parameter is constant per gene per batch.
+        * ``"gene-label"``: parameter is constant per gene per label.
+        * ``"gene-cell"``: parameter is constant per gene per cell.
     log_variational
-        Log(data+1) prior to encoding for numerical stability. Not normalization.
+        If ``True``, use :func:`~torch.log1p` on input data before encoding for numerical stability
+        (not normalization).
     gene_likelihood
-        One of
+        Distribution to use for reconstruction in the generative process. One of the following:
 
-        * ``'nb'`` - Negative binomial distribution
-        * ``'zinb'`` - Zero-inflated negative binomial distribution
-        * ``'poisson'`` - Poisson distribution
+        * ``"nb"``: :class:`~scvi.distributions.NegativeBinomial`.
+        * ``"zinb"``: :class:`~scvi.distributions.ZeroInflatedNegativeBinomial`.
+        * ``"poisson"``: :class:`~scvi.distributions.Poisson`.
     latent_distribution
-        One of
+        Distribution to use for the latent space. One of the following:
 
-        * ``'normal'`` - Isotropic normal
-        * ``'ln'`` - Logistic normal with normal params N(0, 1)
+        * ``"normal"``: isotropic normal.
+        * ``"ln"``: logistic normal with normal params N(0, 1).
     encode_covariates
-        Whether to concatenate covariates to expression in encoder
+        If ``True``, covariates are concatenated to gene expression prior to passing through
+        the encoder(s). Else, only gene expression is used.
     deeply_inject_covariates
-        Whether to concatenate covariates into output of hidden layers in encoder/decoder. This option
-        only applies when `n_layers` > 1. The covariates are concatenated to the input of subsequent hidden layers.
+        If ``True`` and ``n_layers > 1``, covariates are concatenated to the outputs of hidden
+        layers in the encoder(s) (if ``encoder_covariates`` is ``True``) and the decoder prior to
+        passing through the next layer.
+    batch_representation
+        ``EXPERIMENTAL`` Method for encoding batch information. One of the following:
+
+        * ``"one-hot"``: represent batches with one-hot encodings.
+        * ``"embedding"``: represent batches with continuously-valued embeddings using
+          :class:`~scvi.nn.Embedding`.
+
+        Note that batch representations are only passed into the encoder(s) if
+        ``encode_covariates`` is ``True``.
     use_batch_norm
-        Whether to use batch norm in layers.
+        Specifies where to use :class:`~torch.nn.BatchNorm1d` in the model. One of the following:
+
+        * ``"none"``: don't use batch norm in either encoder(s) or decoder.
+        * ``"encoder"``: use batch norm only in the encoder(s).
+        * ``"decoder"``: use batch norm only in the decoder.
+        * ``"both"``: use batch norm in both encoder(s) and decoder.
+
+        Note: if ``use_layer_norm`` is also specified, both will be applied (first
+        :class:`~torch.nn.BatchNorm1d`, then :class:`~torch.nn.LayerNorm`).
     use_layer_norm
-        Whether to use layer norm in layers.
+        Specifies where to use :class:`~torch.nn.LayerNorm` in the model. One of the following:
+
+        * ``"none"``: don't use layer norm in either encoder(s) or decoder.
+        * ``"encoder"``: use layer norm only in the encoder(s).
+        * ``"decoder"``: use layer norm only in the decoder.
+        * ``"both"``: use layer norm in both encoder(s) and decoder.
+
+        Note: if ``use_batch_norm`` is also specified, both will be applied (first
+        :class:`~torch.nn.BatchNorm1d`, then :class:`~torch.nn.LayerNorm`).
     use_size_factor_key
-        Use size_factor AnnDataField defined by the user as scaling factor in mean of conditional distribution.
-        Takes priority over `use_observed_lib_size`.
+        If ``True``, use the :attr:`~anndata.AnnData.obs` column as defined by the
+        ``size_factor_key`` parameter in the model's ``setup_anndata`` method as the scaling
+        factor in the mean of the conditional distribution. Takes priority over
+        ``use_observed_lib_size``.
     use_observed_lib_size
-        Use observed library size for RNA as scaling factor in mean of conditional distribution
+        If ``True``, use the observed library size for RNA as the scaling factor in the mean of the
+        conditional distribution.
     library_log_means
-        1 x n_batch array of means of the log library sizes. Parameterizes prior on library size if
-        not using observed library size.
+        :class:`~numpy.ndarray` of shape ``(1, n_batch)`` of means of the log library sizes that
+        parameterize the prior on library size if ``use_size_factor_key`` is ``False`` and
+        ``use_observed_lib_size`` is ``False``.
     library_log_vars
-        1 x n_batch array of variances of the log library sizes. Parameterizes prior on library size if
-        not using observed library size.
+        :class:`~numpy.ndarray` of shape ``(1, n_batch)`` of variances of the log library sizes
+        that parameterize the prior on library size if ``use_size_factor_key`` is ``False`` and
+        ``use_observed_lib_size`` is ``False``.
     var_activation
-        Callable used to ensure positivity of the variational distributions' variance.
-        When `None`, defaults to `torch.exp`.
+        Callable used to ensure positivity of the variance of the variational distribution. Passed
+        into :class:`~scvi.nn.Encoder`. Defaults to :func:`~torch.exp`.
     extra_encoder_kwargs
-        Extra keyword arguments passed into :class:`~scvi.nn.Encoder`.
+        Additional keyword arguments passed into :class:`~scvi.nn.Encoder`.
     extra_decoder_kwargs
-        Extra keyword arguments passed into :class:`~scvi.nn.DecoderSCVI`.
+        Additional keyword arguments passed into :class:`~scvi.nn.DecoderSCVI`.
+    batch_embedding_kwargs
+        Keyword arguments passed into :class:`~scvi.nn.Embedding` if ``batch_representation`` is
+        set to ``"embedding"``.
+
+    Notes
+    -----
+    Lifecycle: argument ``batch_representation`` is experimental in v1.2.
     """
 
     def __init__(
         self,
         n_input: int,
+        ##############################
         n_output_niche: int,
-        k_nn: int,
-        ###########
-        n_cell_types: Optional[int],  # TODO redundant with n_labels
-        niche_components: Literal[
-            "cell_type", "knn", "knn_unweighted", "cell_type_unweighted"
-        ] = "cell_type",  # TODO: useless as we converged to "cell_type_unweighted"
-        niche_combination: Literal[
-            "latent", "observed"
-        ] = "observed",  # TODO: useless as we converged to "observed"
-        niche_likelihood: Literal["poisson", "gaussian"] = "gaussian",
-        prior_type: Literal["gaussian", "mog"] = "gaussian",
-        prior_mixture_k: Optional[int] = None,
-        ###########
-        cell_rec_weight: float = 1.0,
-        latent_kl_weight: float = 1.0,
-        spatial_weight: Tunable[float] = 1.0,
-        ###########
-        compo_transform: Literal[
-            "log_softmax", "log_compo", "none"
-        ] = "none",  # TODO useless as we have DirichletDecoder now
-        compo_temperature: float = 1.0,  # TODO useless as we have DirichletDecoder now
-        ###########
+        ##############################
         n_batch: int = 0,
         n_labels: int = 0,
-        n_hidden: Tunable[int] = 128,
-        n_latent: Tunable[int] = 10,
-        n_layers: Tunable[int] = 1,
-        ###########
-        n_layers_niche: Tunable[int] = 1,
-        n_layers_compo: Tunable[int] = 1,
-        n_hidden_niche: Tunable[int] = 128,
-        n_hidden_compo: Tunable[int] = 128,
-        ###########
+        n_hidden: int = 128,
+        n_latent: int = 10,
+        n_layers: int = 1,
+        ##############################
+        n_layers_niche: int = 1,
+        n_layers_compo: int = 1,
+        n_hidden_niche: int = 128,
+        n_hidden_compo: int = 128,
+        ##############################
         n_continuous_cov: int = 0,
-        n_cats_per_cov: Optional[Iterable[int]] = None,
-        ###########
-        dropout_rate: Tunable[float] = 0.1,
-        dispersion: Tunable[
-            Literal["gene", "gene-batch", "gene-label", "gene-cell"]
-        ] = "gene",
+        n_cats_per_cov: list[int] | None = None,
+        dropout_rate: float = 0.1,
+        dispersion: Literal["gene", "gene-batch", "gene-label", "gene-cell"] = "gene",
         log_variational: bool = True,
-        gene_likelihood: Tunable[Literal["zinb", "nb", "poisson"]] = "zinb",
-        latent_distribution: Tunable[Literal["normal", "ln"]] = "normal",
-        encode_covariates: Tunable[bool] = False,
-        deeply_inject_covariates: Tunable[bool] = True,
-        use_batch_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "both",
-        use_layer_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "none",
+        gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
+        latent_distribution: Literal["normal", "ln"] = "normal",
+        ##############################
+        niche_likelihood: Literal["poisson", "gaussian"] = "gaussian",
+        cell_rec_weight: float = 1.0,
+        latent_kl_weight: float = 1.0,
+        spatial_weight: float = 1.0,
+        niche_rec_weight: float = 1.0,
+        compo_rec_weight: float = 1.0,
+        ##############################
+        attention_decoder: bool = False,
+        n_heads: int = 2,
+        ##############################
+        encode_covariates: bool = False,
+        deeply_inject_covariates: bool = True,
+        batch_representation: Literal["one-hot", "embedding"] = "one-hot",
+        use_batch_norm: Literal["encoder", "decoder", "none", "both"] = "both",
+        use_layer_norm: Literal["encoder", "decoder", "none", "both"] = "none",
         use_size_factor_key: bool = False,
         use_observed_lib_size: bool = True,
-        library_log_means: Optional[np.ndarray] = None,
-        library_log_vars: Optional[np.ndarray] = None,
-        var_activation: Optional[Callable] = None,
-        extra_encoder_kwargs: Optional[dict] = None,
-        extra_decoder_kwargs: Optional[dict] = None,
+        library_log_means: np.ndarray | None = None,
+        library_log_vars: np.ndarray | None = None,
+        var_activation: Callable[[torch.Tensor], torch.Tensor] = None,
+        extra_encoder_kwargs: dict | None = None,
+        extra_decoder_kwargs: dict | None = None,
+        batch_embedding_kwargs: dict | None = None,
     ):
+        # from scvi.nn import DecoderSCVI, Encoder
+        from scvi.nn import DecoderSCVI
+
         super().__init__()
 
-        self.latent_kl_weight = latent_kl_weight
-        self.cell_rec_weight = cell_rec_weight
-        self.spatial_weight = spatial_weight
-        self.niche_components = niche_components
-        self.niche_combination = niche_combination
-        self.compo_transform = compo_transform
-        self.compo_temperature = compo_temperature
-        self.n_output_niche = n_output_niche
-        self.niche_likelihood = niche_likelihood
-        self.prior_type = prior_type
-
-        self.n_cats_per_cov = n_cats_per_cov
         self.dispersion = dispersion
         self.n_latent = n_latent
         self.log_variational = log_variational
         self.gene_likelihood = gene_likelihood
-        # Automatically deactivate if useless
         self.n_batch = n_batch
         self.n_labels = n_labels
         self.latent_distribution = latent_distribution
         self.encode_covariates = encode_covariates
-
         self.use_size_factor_key = use_size_factor_key
         self.use_observed_lib_size = use_size_factor_key or use_observed_lib_size
+
+        self.latent_kl_weight = latent_kl_weight
+        self.cell_rec_weight = cell_rec_weight
+        self.spatial_weight = spatial_weight
+        ##############################
+        self.niche_rec_weight = niche_rec_weight
+        self.compo_rec_weight = compo_rec_weight
+        ##############################
+        self.n_output_niche = n_output_niche
+        self.niche_likelihood = niche_likelihood
+        self.attention_decoder = attention_decoder
+        self.n_heads = n_heads
+
         if not self.use_observed_lib_size:
             if library_log_means is None or library_log_vars is None:
                 raise ValueError(
@@ -212,9 +239,18 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             pass
         else:
             raise ValueError(
-                "dispersion must be one of ['gene', 'gene-batch',"
-                " 'gene-label', 'gene-cell'], but input was "
-                "{}.format(self.dispersion)"
+                "`dispersion` must be one of 'gene', 'gene-batch', 'gene-label', 'gene-cell'."
+            )
+
+        self.batch_representation = batch_representation
+        if self.batch_representation == "embedding":
+            self.init_embedding(
+                REGISTRY_KEYS.BATCH_KEY, n_batch, **(batch_embedding_kwargs or {})
+            )
+            batch_dim = self.get_embedding(REGISTRY_KEYS.BATCH_KEY).embedding_dim
+        elif self.batch_representation != "one-hot":
+            raise ValueError(
+                "`batch_representation` must be one of 'one-hot', 'embedding'."
             )
 
         use_batch_norm_encoder = use_batch_norm == "encoder" or use_batch_norm == "both"
@@ -222,10 +258,15 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         use_layer_norm_encoder = use_layer_norm == "encoder" or use_layer_norm == "both"
         use_layer_norm_decoder = use_layer_norm == "decoder" or use_layer_norm == "both"
 
-        # z encoder goes from the n_input-dimensional data to an n_latent-d
-        # latent space representation
         n_input_encoder = n_input + n_continuous_cov * encode_covariates
-        cat_list = [n_batch] + list([] if n_cats_per_cov is None else n_cats_per_cov)
+        if self.batch_representation == "embedding":
+            n_input_encoder += batch_dim * encode_covariates
+            cat_list = list([] if n_cats_per_cov is None else n_cats_per_cov)
+        else:
+            cat_list = [n_batch] + list(
+                [] if n_cats_per_cov is None else n_cats_per_cov
+            )
+
         encoder_cat_list = cat_list if encode_covariates else None
         _extra_encoder_kwargs = extra_encoder_kwargs or {}
         self.z_encoder = Encoder(
@@ -258,8 +299,10 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             return_dist=True,
             **_extra_encoder_kwargs,
         )
-        # decoder goes from n_latent-dimensional space to n_input-d data
         n_input_decoder = n_latent + n_continuous_cov
+        if self.batch_representation == "embedding":
+            n_input_decoder += batch_dim
+
         _extra_decoder_kwargs = extra_decoder_kwargs or {}
         self.decoder = DecoderSCVI(
             n_input_decoder,
@@ -274,26 +317,41 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             **_extra_decoder_kwargs,
         )
 
-        self.n_niche_components = (
-            n_cell_types if niche_components.startswith("cell_type") else k_nn
-        )
-        self.niche_decoder = NicheDecoder(
-            n_input=n_input_decoder,
-            # n_output=n_input_decoder_niche,
-            n_output=n_output_niche,
-            n_niche_components=self.n_niche_components,
-            n_cat_list=cat_list,
-            n_layers=n_layers_niche,
-            n_hidden=n_hidden_niche,
-            inject_covariates=deeply_inject_covariates,
-            use_batch_norm=use_batch_norm_decoder,
-            use_layer_norm=use_layer_norm_decoder,
-            **_extra_decoder_kwargs,
-        )
+        if self.attention_decoder:
+
+            self.niche_decoder = NicheDecoderAttention(
+                n_input=n_input_decoder,
+                n_output=n_output_niche,
+                n_niche_components=n_labels,
+                n_input_attention=n_heads * n_input_decoder,
+                n_heads=n_heads,
+                n_cat_list=cat_list,
+                n_layers_proj=1,
+                n_hidden_proj=n_hidden_niche,
+                n_layers=n_layers_niche,
+                n_hidden=n_hidden_niche,
+                dropout_rate=dropout_rate,
+                **_extra_decoder_kwargs,
+            )
+
+        else:
+
+            self.niche_decoder = NicheDecoder(
+                n_input=n_input_decoder,
+                n_output=n_output_niche,
+                n_niche_components=n_labels,
+                n_cat_list=cat_list,
+                n_layers=n_layers_niche,
+                n_hidden=n_hidden_niche,
+                inject_covariates=deeply_inject_covariates,
+                use_batch_norm=use_batch_norm_decoder,
+                use_layer_norm=use_layer_norm_decoder,
+                **_extra_decoder_kwargs,
+            )
 
         self.composition_decoder = DirichletDecoder(
             n_input_decoder,
-            n_cell_types,
+            n_labels,
             n_cat_list=None,  # do not batch-correct the cell type proportions.
             n_layers=n_layers_compo,
             n_hidden=n_hidden_compo,
@@ -303,109 +361,72 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             **_extra_decoder_kwargs,
         )
 
-        if self.prior_type == "mog":
-            # self.prior_means = torch.nn.Parameter(
-            #     0.01 * torch.randn([n_labels, self.num_classes_mog, n_latent])
-            # )
-            # self.prior_log_scales = torch.nn.Parameter(
-            #     torch.zeros([n_labels, self.num_classes_mog, n_latent])
-            # )
-            # self.prior_logits = torch.nn.Parameter(
-            #     torch.ones([n_labels, self.num_classes_mog])
-            # )
-
-            if prior_mixture_k is None:
-                prior_mixture_k = n_labels
-
-            self.prior_logits = torch.nn.Parameter(
-                torch.nn.init.zeros_(torch.empty(prior_mixture_k))
-            )
-            self.prior_means = torch.nn.Parameter(
-                torch.nn.init.normal_(torch.empty(n_latent, prior_mixture_k))
-            )
-            self.prior_scales = torch.nn.Parameter(
-                torch.nn.init.zeros_(torch.empty(n_latent, prior_mixture_k))
-            )
-
     def _get_inference_input(
         self,
-        tensors,
-    ):
-        batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
-
-        cont_key = REGISTRY_KEYS.CONT_COVS_KEY
-        cont_covs = tensors[cont_key] if cont_key in tensors.keys() else None
-
-        cat_key = REGISTRY_KEYS.CAT_COVS_KEY
-        cat_covs = tensors[cat_key] if cat_key in tensors.keys() else None
+        tensors: dict[str, torch.Tensor | None],
+    ) -> dict[str, torch.Tensor | None]:
+        """Get input tensors for the inference process."""
+        from scvi.data._constants import ADATA_MINIFY_TYPE
 
         if self.minified_data_type is None:
-            x = tensors[REGISTRY_KEYS.X_KEY]
-            input_dict = {
-                "x": x,
-                "batch_index": batch_index,
-                "cont_covs": cont_covs,
-                "cat_covs": cat_covs,
+            return {
+                MODULE_KEYS.X_KEY: tensors[REGISTRY_KEYS.X_KEY],
+                MODULE_KEYS.BATCH_INDEX_KEY: tensors[REGISTRY_KEYS.BATCH_KEY],
+                MODULE_KEYS.CONT_COVS_KEY: tensors.get(
+                    REGISTRY_KEYS.CONT_COVS_KEY, None
+                ),
+                MODULE_KEYS.CAT_COVS_KEY: tensors.get(REGISTRY_KEYS.CAT_COVS_KEY, None),
+            }
+        elif self.minified_data_type == ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
+            return {
+                MODULE_KEYS.QZM_KEY: tensors[REGISTRY_KEYS.LATENT_QZM_KEY],
+                MODULE_KEYS.QZV_KEY: tensors[REGISTRY_KEYS.LATENT_QZV_KEY],
+                REGISTRY_KEYS.OBSERVED_LIB_SIZE: tensors[
+                    REGISTRY_KEYS.OBSERVED_LIB_SIZE
+                ],
             }
         else:
-            if self.minified_data_type == ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
-                qzm = tensors[REGISTRY_KEYS.LATENT_QZM_KEY]
-                qzv = tensors[REGISTRY_KEYS.LATENT_QZV_KEY]
-                observed_lib_size = tensors[REGISTRY_KEYS.OBSERVED_LIB_SIZE]
-                input_dict = {
-                    "qzm": qzm,
-                    "qzv": qzv,
-                    "observed_lib_size": observed_lib_size,
-                }
-            else:
-                raise NotImplementedError(
-                    f"Unknown minified-data type: {self.minified_data_type}"
-                )
+            raise NotImplementedError(
+                f"Unknown minified-data type: {self.minified_data_type}"
+            )
 
-        return input_dict
+    def _get_generative_input(
+        self,
+        tensors: dict[str, torch.Tensor],
+        inference_outputs: dict[str, torch.Tensor | Distribution | None],
+    ) -> dict[str, torch.Tensor | None]:
+        """Get input tensors for the generative process."""
+        size_factor = tensors.get(REGISTRY_KEYS.SIZE_FACTOR_KEY, None)
+        if size_factor is not None:
+            size_factor = torch.log(size_factor)
 
-    def _get_generative_input(self, tensors, inference_outputs):
-        z = inference_outputs["z"]
-        library = inference_outputs["library"]
-        batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
-        y = tensors[REGISTRY_KEYS.LABELS_KEY]
-
-        cont_key = REGISTRY_KEYS.CONT_COVS_KEY
-        cont_covs = tensors[cont_key] if cont_key in tensors.keys() else None
-
-        cat_key = REGISTRY_KEYS.CAT_COVS_KEY
-        cat_covs = tensors[cat_key] if cat_key in tensors.keys() else None
-
-        size_factor_key = REGISTRY_KEYS.SIZE_FACTOR_KEY
-        size_factor = (
-            torch.log(tensors[size_factor_key])
-            if size_factor_key in tensors.keys()
-            else None
-        )
-
-        input_dict = {
-            "z": z,
-            "library": library,
-            "batch_index": batch_index,
-            "y": y,
-            "cont_covs": cont_covs,
-            "cat_covs": cat_covs,
-            "size_factor": size_factor,
+        return {
+            MODULE_KEYS.Z_KEY: inference_outputs[MODULE_KEYS.Z_KEY],
+            MODULE_KEYS.LIBRARY_KEY: inference_outputs[MODULE_KEYS.LIBRARY_KEY],
+            MODULE_KEYS.BATCH_INDEX_KEY: tensors[REGISTRY_KEYS.BATCH_KEY],
+            MODULE_KEYS.Y_KEY: tensors[REGISTRY_KEYS.LABELS_KEY],
+            MODULE_KEYS.CONT_COVS_KEY: tensors.get(REGISTRY_KEYS.CONT_COVS_KEY, None),
+            MODULE_KEYS.CAT_COVS_KEY: tensors.get(REGISTRY_KEYS.CAT_COVS_KEY, None),
+            MODULE_KEYS.SIZE_FACTOR_KEY: size_factor,
         }
-        return input_dict
 
-    def _compute_local_library_params(self, batch_index):
+    def _compute_local_library_params(
+        self,
+        batch_index: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Computes local library parameters.
 
         Compute two tensors of shape (batch_index.shape[0], 1) where each
         element corresponds to the mean and variances, respectively, of the
         log library sizes in the batch the cell corresponds to.
         """
+        from torch.nn.functional import linear
+
         n_batch = self.library_log_means.shape[1]
-        local_library_log_means = F.linear(
+        local_library_log_means = linear(
             one_hot(batch_index, n_batch), self.library_log_means
         )
-        local_library_log_vars = F.linear(
+        local_library_log_vars = linear(
             one_hot(batch_index, n_batch), self.library_log_vars
         )
         return local_library_log_means, local_library_log_vars
@@ -413,21 +434,18 @@ class nicheVAE(BaseMinifiedModeModuleClass):
     @auto_move_data
     def _regular_inference(
         self,
-        x,
-        batch_index,
-        cont_covs=None,
-        cat_covs=None,
-        n_samples=1,
-    ):
-        """High level inference method.
-
-        Runs the inference (encoder) model.
-        """
+        x: torch.Tensor,
+        batch_index: torch.Tensor,
+        cont_covs: torch.Tensor | None = None,
+        cat_covs: torch.Tensor | None = None,
+        n_samples: int = 1,
+    ) -> dict[str, torch.Tensor | Distribution | None]:
+        """Run the regular inference process."""
         x_ = x
         if self.use_observed_lib_size:
             library = torch.log(x.sum(1)).unsqueeze(1)
         if self.log_variational:
-            x_ = torch.log(1 + x_)
+            x_ = torch.log1p(x_)
 
         if cont_covs is not None and self.encode_covariates:
             encoder_input = torch.cat((x_, cont_covs), dim=-1)
@@ -437,12 +455,22 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             categorical_input = torch.split(cat_covs, 1, dim=1)
         else:
             categorical_input = ()
-        qz, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
+
+        if self.batch_representation == "embedding" and self.encode_covariates:
+            batch_rep = self.compute_embedding(REGISTRY_KEYS.BATCH_KEY, batch_index)
+            encoder_input = torch.cat([encoder_input, batch_rep], dim=-1)
+            qz, z = self.z_encoder(encoder_input, *categorical_input)
+        else:
+            qz, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
+
         ql = None
         if not self.use_observed_lib_size:
-            ql, library_encoded = self.l_encoder(
-                encoder_input, batch_index, *categorical_input
-            )
+            if self.batch_representation == "embedding":
+                ql, library_encoded = self.l_encoder(encoder_input, *categorical_input)
+            else:
+                ql, library_encoded = self.l_encoder(
+                    encoder_input, batch_index, *categorical_input
+                )
             library = library_encoded
 
         if n_samples > 1:
@@ -454,41 +482,71 @@ class nicheVAE(BaseMinifiedModeModuleClass):
                 )
             else:
                 library = ql.sample((n_samples,))
-        outputs = {"z": z, "qz": qz, "ql": ql, "library": library}
-        return outputs
+
+        return {
+            MODULE_KEYS.Z_KEY: z,
+            MODULE_KEYS.QZ_KEY: qz,
+            MODULE_KEYS.QL_KEY: ql,
+            MODULE_KEYS.LIBRARY_KEY: library,
+        }
 
     @auto_move_data
-    def _cached_inference(self, qzm, qzv, observed_lib_size, n_samples=1):
-        if self.minified_data_type == ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
-            dist = Normal(qzm, qzv.sqrt())
-            # use dist.sample() rather than rsample because we aren't optimizing the z here
-            untran_z = dist.sample() if n_samples == 1 else dist.sample((n_samples,))
-            z = self.z_encoder.z_transformation(untran_z)
-            library = torch.log(observed_lib_size)
-            if n_samples > 1:
-                library = library.unsqueeze(0).expand(
-                    (n_samples, library.size(0), library.size(1))
-                )
-        else:
+    def _cached_inference(
+        self,
+        qzm: torch.Tensor,
+        qzv: torch.Tensor,
+        observed_lib_size: torch.Tensor,
+        n_samples: int = 1,
+    ) -> dict[str, torch.Tensor | None]:
+        """Run the cached inference process."""
+        from torch.distributions import Normal
+
+        from scvi.data._constants import ADATA_MINIFY_TYPE
+
+        if self.minified_data_type != ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
             raise NotImplementedError(
                 f"Unknown minified-data type: {self.minified_data_type}"
             )
-        outputs = {"z": z, "qz_m": qzm, "qz_v": qzv, "ql": None, "library": library}
-        return outputs
+
+        dist = Normal(qzm, qzv.sqrt())
+        # use dist.sample() rather than rsample because we aren't optimizing the z here
+        untran_z = dist.sample() if n_samples == 1 else dist.sample((n_samples,))
+        z = self.z_encoder.z_transformation(untran_z)
+        library = torch.log(observed_lib_size)
+        if n_samples > 1:
+            library = library.unsqueeze(0).expand(
+                (n_samples, library.size(0), library.size(1))
+            )
+
+        return {
+            MODULE_KEYS.Z_KEY: z,
+            MODULE_KEYS.QZM_KEY: qzm,
+            MODULE_KEYS.QZV_KEY: qzv,
+            MODULE_KEYS.QL_KEY: None,
+            MODULE_KEYS.LIBRARY_KEY: library,
+        }
 
     @auto_move_data
     def generative(
         self,
-        z,
-        library,
-        batch_index,
-        cont_covs=None,
-        cat_covs=None,
-        size_factor=None,
-        y=None,
-        transform_batch=None,
-    ):
-        """Runs the generative model."""
+        z: torch.Tensor,
+        library: torch.Tensor,
+        batch_index: torch.Tensor,
+        cont_covs: torch.Tensor | None = None,
+        cat_covs: torch.Tensor | None = None,
+        size_factor: torch.Tensor | None = None,
+        y: torch.Tensor | None = None,
+        transform_batch: torch.Tensor | None = None,
+    ) -> dict[str, Distribution | None]:
+        """Run the generative process."""
+        from scvi.distributions import (
+            NegativeBinomial,
+            Poisson,
+            ZeroInflatedNegativeBinomial,
+        )
+        from torch.distributions import Normal
+        from torch.nn.functional import linear
+
         # TODO: refactor forward function to not rely on y
         # Likelihood distribution
         if cont_covs is None:
@@ -511,20 +569,32 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         if not self.use_size_factor_key:
             size_factor = library
 
-        px_scale, px_r, px_rate, px_dropout = self.decoder(
-            self.dispersion,
-            decoder_input,
-            size_factor,
-            batch_index,
-            *categorical_input,
-            y,
-        )
+        if self.batch_representation == "embedding":
+            batch_rep = self.compute_embedding(REGISTRY_KEYS.BATCH_KEY, batch_index)
+            decoder_input = torch.cat([decoder_input, batch_rep], dim=-1)
+            px_scale, px_r, px_rate, px_dropout = self.decoder(
+                self.dispersion,
+                decoder_input,
+                size_factor,
+                *categorical_input,
+                y,
+            )
+        else:
+            px_scale, px_r, px_rate, px_dropout = self.decoder(
+                self.dispersion,
+                decoder_input,
+                size_factor,
+                batch_index,
+                *categorical_input,
+                y,
+            )
+
         if self.dispersion == "gene-label":
-            px_r = F.linear(
+            px_r = linear(
                 one_hot(y, self.n_labels), self.px_r
             )  # px_r gets transposed - last dimension is nb genes
         elif self.dispersion == "gene-batch":
-            px_r = F.linear(one_hot(batch_index, self.n_batch), self.px_r)
+            px_r = linear(one_hot(batch_index, self.n_batch), self.px_r)
         elif self.dispersion == "gene":
             px_r = self.px_r
 
@@ -553,9 +623,25 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             pl = Normal(local_library_log_means, local_library_log_vars.sqrt())
         pz = Normal(torch.zeros_like(z), torch.ones_like(z))
 
-        niche_mean, niche_variance = self.niche_decoder(
+        niche_composition = self.composition_decoder(
             decoder_input, batch_index, *categorical_input
-        )
+        )  # DirichletDecoder, niche_composition is a distribution
+
+        if self.attention_decoder:
+            if self.batch_representation == "embedding":
+                niche_mean, niche_variance, niche_attention = self.niche_decoder(
+                    decoder_input, *categorical_input
+                )
+            else:  # one-hot
+                niche_mean, niche_variance, niche_attention = self.niche_decoder(
+                    decoder_input, batch_index, *categorical_input
+                )
+
+        else:
+            niche_mean, niche_variance = self.niche_decoder(
+                decoder_input, batch_index, *categorical_input
+            )
+            niche_attention = None
 
         if self.niche_likelihood == "poisson":
             niche_expression = torch.distributions.Poisson(niche_variance)
@@ -563,94 +649,65 @@ class nicheVAE(BaseMinifiedModeModuleClass):
         else:
             niche_expression = Normal(niche_mean, niche_variance.sqrt())
 
-        niche_composition = self.composition_decoder(
-            decoder_input, batch_index, *categorical_input
-        )  # if DirichletDecoder, niche_composition is a distribution
-
         return {
-            "px": px,
-            "pl": pl,
-            "pz": pz,
-            "niche_mean": niche_mean,
-            "niche_variance": niche_variance,
-            "niche_composition": niche_composition,
-            "niche_expression": niche_expression,
+            MODULE_KEYS.PX_KEY: px,
+            MODULE_KEYS.PL_KEY: pl,
+            MODULE_KEYS.PZ_KEY: pz,
+            NICHEVI_MODULE_KEYS.NICHE_MEAN: niche_mean,
+            NICHEVI_MODULE_KEYS.NICHE_VARIANCE: niche_variance,
+            NICHEVI_MODULE_KEYS.NICHE_ATTENTION: niche_attention,
+            NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION: niche_expression,
+            NICHEVI_MODULE_KEYS.P_NICHE_COMPOSITION: niche_composition,
         }
 
     def loss(
         self,
-        tensors,
-        inference_outputs,
-        generative_outputs,
+        tensors: dict[str, torch.Tensor],
+        inference_outputs: dict[str, torch.Tensor | Distribution | None],
+        generative_outputs: dict[str, torch.Tensor | Distribution | None],
         kl_weight: float = 1.0,
+        spatial_weight: float = 1.0,
         epsilon: float = 1e-6,
-    ):
-        """Computes the loss function for the model."""
+    ) -> LossOutput:
+        """Compute the loss."""
+        from torch.distributions import kl_divergence
+
         x = tensors[REGISTRY_KEYS.X_KEY]
 
-        niche_weights_ct = tensors[NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY]
+        kl_divergence_z = kl_divergence(
+            inference_outputs[MODULE_KEYS.QZ_KEY],
+            generative_outputs[MODULE_KEYS.PZ_KEY],
+        ).sum(dim=-1)
+        if not self.use_observed_lib_size:
+            kl_divergence_l = kl_divergence(
+                inference_outputs[MODULE_KEYS.QL_KEY],
+                generative_outputs[MODULE_KEYS.PL_KEY],
+            ).sum(dim=1)
+        else:
+            kl_divergence_l = torch.tensor(0.0, device=x.device)
 
-        if self.niche_components == "cell_type":
-            niche_weights = niche_weights_ct  # maybe requires grad 0
+        reconst_loss_cell = -generative_outputs[MODULE_KEYS.PX_KEY].log_prob(x).sum(-1)
 
-        elif self.niche_components == "cell_type_unweighted":
-            niche_weights = (niche_weights_ct > 0).float()
+        kl_local_for_warmup = kl_divergence_z
+        kl_local_no_warmup = kl_divergence_l
 
-        n_batch = niche_weights.shape[0]
-        n_cell_types = niche_weights_ct.size(dim=-1)
+        weighted_kl_local = kl_weight * kl_local_for_warmup + kl_local_no_warmup
 
-        # NICHE PRIOR DISTRIBUTION-------------------------------------------------------------------------------
+        niche_weights = tensors[NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY]
+        niche_weights = (niche_weights > 0).float()
 
         z1_mean_niche = tensors[
             NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY
         ]  # batch times cell_types times n_latent
-        # z1_var_niche = tensors[REGISTRY_KEYS.Z1_VAR_CT_KEY]
 
-        # POSTERIOR DISTRIBUTION-------------------------------------------------------------------------------
-        niche_mean_mat = generative_outputs["niche_mean"]
-        niche_var_mat = generative_outputs["niche_variance"]
+        reconst_loss_niche = (
+            -generative_outputs[NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION]
+            .log_prob(z1_mean_niche)
+            .sum(dim=(-1))
+        )
 
-        # --------------Niche mixture posterior distribution  DEPRECATED--------------------------
-        if self.niche_combination == "latent":
-            weighted_reconst_loss_niche = (
-                torch.zeros(n_batch).type(torch.float64).to(x.device)
-            )
-            for type in range(
-                n_cell_types
-            ):  # TODO can you replace the for loop with a torch.sum?
-                latent_mean_type_prior, latent_var_type_prior = (
-                    z1_mean_niche[:, type, :],
-                    z1_mean_niche[:, type, :],  # z1_var_niche[:, type, :],
-                )
-                niche_weights_type = niche_weights[:, type]
-                latent_mean_type_posterior, latent_var_type_posterior = (
-                    niche_mean_mat[:, type, :],  # batch_size times n_latent
-                    niche_var_mat[:, type, :],
-                )
+        masked_reconst_loss_niche = (reconst_loss_niche * niche_weights).sum(dim=-1)
 
-                niche_type_prior_distribution = Normal(
-                    latent_mean_type_prior, latent_var_type_prior.sqrt()
-                )
-                niche_type_posterior_distribution = Normal(
-                    latent_mean_type_posterior, latent_var_type_posterior.sqrt()
-                )
-
-                weighted_reconst_loss_niche += niche_weights_type * kl(
-                    niche_type_posterior_distribution, niche_type_prior_distribution
-                ).sum(dim=-1)
-
-        elif self.niche_combination == "observed":
-            reconst_loss_niche = (
-                -generative_outputs["niche_expression"]
-                .log_prob(z1_mean_niche)
-                .sum(dim=(-1))
-            )
-
-            weighted_reconst_loss_niche = (reconst_loss_niche * niche_weights).sum(
-                dim=-1
-            )
-
-        # COMPOSITION LOSS----------------------------------------------------------------
         true_niche_composition = (
             tensors[NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY] + epsilon
         )
@@ -659,37 +716,19 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             keepdim=True,
         )
 
-        reconstructed_niche_composition = generative_outputs["niche_composition"]
+        reconst_niche_composition = generative_outputs[
+            NICHEVI_MODULE_KEYS.P_NICHE_COMPOSITION
+        ]
 
-        composition_loss = -reconstructed_niche_composition.log_prob(
-            true_niche_composition
-        )
-
-        kl_divergence_z = kl(inference_outputs["qz"], generative_outputs["pz"]).sum(
-            dim=-1
-        )
-
-        if not self.use_observed_lib_size:
-            kl_divergence_l = kl(
-                inference_outputs["ql"],
-                generative_outputs["pl"],
-            ).sum(dim=1)
-        else:
-            kl_divergence_l = torch.tensor(0.0, device=x.device)
-
-        reconst_loss_cell = -generative_outputs["px"].log_prob(x).sum(-1)
-
-        kl_local_for_warmup = kl_divergence_z
-        kl_local_no_warmup = kl_divergence_l
-
-        weighted_kl_local = kl_weight * kl_local_for_warmup + kl_local_no_warmup
-        # weighted_kl_local = (
-        #     kl_local_for_warmup + kl_local_no_warmup
-        # )  # means that we ignore kl_weight warmup
+        composition_loss = -reconst_niche_composition.log_prob(true_niche_composition)
 
         _weighted_reconst_loss_cell = self.cell_rec_weight * reconst_loss_cell
-        _weighted_reconst_loss_niche = self.spatial_weight * weighted_reconst_loss_niche
-        _weighted_composition_loss = self.spatial_weight * composition_loss
+        _weighted_reconst_loss_niche = (
+            spatial_weight * self.niche_rec_weight * masked_reconst_loss_niche
+        )
+        _weighted_composition_loss = (
+            spatial_weight * self.compo_rec_weight * composition_loss
+        )
         _weighted_kl_local = self.latent_kl_weight * weighted_kl_local
 
         loss = torch.mean(
@@ -699,100 +738,108 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             + _weighted_composition_loss
         )
 
-        kl_local = {
-            "kl_divergence_l": kl_divergence_l,
-            "kl_divergence_z": kl_divergence_z,
-        }
-
         return LossOutput(
             loss=loss,
             reconstruction_loss=reconst_loss_cell,
-            kl_local=kl_local,
+            kl_local={
+                MODULE_KEYS.KL_L_KEY: kl_divergence_l,
+                MODULE_KEYS.KL_Z_KEY: kl_divergence_z,
+            },
             extra_metrics={
-                "niche_compo": torch.mean(composition_loss),
-                "niche_reconst": torch.mean(weighted_reconst_loss_niche),
+                NICHEVI_MODULE_KEYS.NLL_NICHE_COMPOSITION_KEY: torch.mean(
+                    composition_loss
+                ),
+                NICHEVI_MODULE_KEYS.NLL_NICHE_EXPRESSION_KEY: torch.mean(
+                    masked_reconst_loss_niche
+                ),
+                NICHEVI_MODULE_KEYS.SPATIAL_WEIGHT_KEY: spatial_weight,
             },
         )
 
     @torch.inference_mode()
     def sample(
         self,
-        tensors,
-        n_samples=1,
-        library_size=1,
-    ) -> np.ndarray:
-        r"""Generate observation samples from the posterior predictive distribution.
+        tensors: dict[str, torch.Tensor],
+        n_samples: int = 1,
+        max_poisson_rate: float = 1e8,
+    ) -> torch.Tensor:
+        r"""Generate predictive samples from the posterior predictive distribution.
 
-        The posterior predictive distribution is written as :math:`p(\hat{x} \mid x)`.
+        The posterior predictive distribution is denoted as :math:`p(\hat{x} \mid x)`, where
+        :math:`x` is the input data and :math:`\hat{x}` is the sampled data.
+
+        We sample from this distribution by first sampling ``n_samples`` times from the posterior
+        distribution :math:`q(z \mid x)` for a given observation, and then sampling from the
+        likelihood :math:`p(\hat{x} \mid z)` for each of these.
 
         Parameters
         ----------
         tensors
-            Tensors dict
+            Dictionary of tensors passed into :meth:`~scvi.module.VAE.forward`.
         n_samples
-            Number of required samples for each cell
-        library_size
-            Library size to scale samples to
+            Number of Monte Carlo samples to draw from the distribution for each observation.
+        max_poisson_rate
+            The maximum value to which to clip the ``rate`` parameter of
+            :class:`~scvi.distributions.Poisson`. Avoids numerical sampling issues when the
+            parameter is very large due to the variance of the distribution.
 
         Returns
         -------
-        x_new : :py:class:`torch.Tensor`
-            tensor with shape (n_cells, n_genes, n_samples)
+        Tensor on CPU with shape ``(n_obs, n_vars)`` if ``n_samples == 1``, else
+        ``(n_obs, n_vars,)``.
         """
+        from scvi.distributions import Poisson
+
         inference_kwargs = {"n_samples": n_samples}
-        (
-            _,
-            generative_outputs,
-        ) = self.forward(
-            tensors,
-            inference_kwargs=inference_kwargs,
-            compute_loss=False,
+        _, generative_outputs = self.forward(
+            tensors, inference_kwargs=inference_kwargs, compute_loss=False
         )
 
-        dist = generative_outputs["px"]
+        dist = generative_outputs[MODULE_KEYS.PX_KEY]
         if self.gene_likelihood == "poisson":
-            l_train = generative_outputs["px"].rate
-            l_train = torch.clamp(l_train, max=1e8)
-            dist = torch.distributions.Poisson(
-                l_train
-            )  # Shape : (n_samples, n_cells_batch, n_genes)
-        if n_samples > 1:
-            exprs = dist.sample().permute(
-                [1, 2, 0]
-            )  # Shape : (n_cells_batch, n_genes, n_samples)
-        else:
-            exprs = dist.sample()
+            dist = Poisson(torch.clamp(dist.rate, max=max_poisson_rate))
 
-        return exprs.cpu()
+        # (n_obs, n_vars) if n_samples == 1, else (n_samples, n_obs, n_vars)
+        samples = dist.sample()
+        # (n_samples, n_obs, n_vars) -> (n_obs, n_vars, n_samples)
+        samples = torch.permute(samples, (1, 2, 0)) if n_samples > 1 else samples
+
+        return samples.cpu()
 
     @torch.inference_mode()
     @auto_move_data
     def marginal_ll(
         self,
-        tensors,
-        n_mc_samples,
-        return_mean=False,
-        n_mc_samples_per_pass=1,
+        tensors: dict[str, torch.Tensor],
+        n_mc_samples: int,
+        return_mean: bool = False,
+        n_mc_samples_per_pass: int = 1,
     ):
-        """Computes the marginal log likelihood of the model.
+        """Compute the marginal log-likelihood of the data under the model.
 
         Parameters
         ----------
         tensors
-            Dict of input tensors, typically corresponding to the items of the data loader.
+            Dictionary of tensors passed into :meth:`~scvi.module.VAE.forward`.
         n_mc_samples
-            Number of Monte Carlo samples to use for the estimation of the marginal log likelihood.
+            Number of Monte Carlo samples to use for the estimation of the marginal log-likelihood.
         return_mean
             Whether to return the mean of marginal likelihoods over cells.
         n_mc_samples_per_pass
             Number of Monte Carlo samples to use per pass. This is useful to avoid memory issues.
         """
+        from torch import logsumexp
+        from torch.distributions import Normal
+
         batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
 
         to_sum = []
         if n_mc_samples_per_pass > n_mc_samples:
-            logger.warn(
-                "Number of chunks is larger than the total number of samples, setting it to the number of samples"
+            warnings.warn(
+                "Number of chunks is larger than the total number of samples, setting it to the "
+                "number of samples",
+                RuntimeWarning,
+                stacklevel=settings.warnings_stacklevel,
             )
             n_mc_samples_per_pass = n_mc_samples
         n_passes = int(np.ceil(n_mc_samples / n_mc_samples_per_pass))
@@ -801,10 +848,10 @@ class nicheVAE(BaseMinifiedModeModuleClass):
             inference_outputs, _, losses = self.forward(
                 tensors, inference_kwargs={"n_samples": n_mc_samples_per_pass}
             )
-            qz = inference_outputs["qz"]
-            ql = inference_outputs["ql"]
-            z = inference_outputs["z"]
-            library = inference_outputs["library"]
+            qz = inference_outputs[MODULE_KEYS.QZ_KEY]
+            ql = inference_outputs[MODULE_KEYS.QL_KEY]
+            z = inference_outputs[MODULE_KEYS.Z_KEY]
+            library = inference_outputs[MODULE_KEYS.LIBRARY_KEY]
 
             # Reconstruction Loss
             reconst_loss = losses.dict_sum(losses.reconstruction_loss)

@@ -1,6 +1,7 @@
 from typing import Literal
 
 import anndata as ad
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
@@ -134,14 +135,18 @@ def adjusted_nearest_neighbors(
     return adjacency_matrix.toarray()
 
 
-def get_nonzero_indices_from_rows(csr_matrix, row_list):
-    # Convert the row list to a NumPy array
-    row_array = np.array(row_list)
+def _get_nonzero_indices_from_rows(csr_matrix, row_idx):
+    return csr_matrix[row_idx].indices
 
-    # Create a boolean mask for the rows of interest
-    row_mask = np.isin(csr_matrix.indices, row_array)
 
-    # Get the non-zero column indices for the rows of interest
-    nonzero_indices = csr_matrix.indices[row_mask]
+def get_connectivity_distribution(csr_matrix):
+    # Get the number of non-zero entries per row
+    row_counts = np.diff(csr_matrix.indptr)
 
-    return nonzero_indices
+    # Create the histogram
+    fig, ax = plt.subplots()
+    ax.hist(row_counts, bins=np.max(row_counts) + 1, density=True)
+    ax.set_xlabel("Number of non-zero entries")
+    ax.set_ylabel("Number of rows")
+    ax.set_title("Histogram of non-zero entries per row")
+    plt.show()

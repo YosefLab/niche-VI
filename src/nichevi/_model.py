@@ -1,13 +1,15 @@
+from __future__ import annotations
+
 import logging
-from collections.abc import Sequence
-from typing import Literal, Optional
+import warnings
+from typing import Literal
 
 import numpy as np
 import pandas as pd
 import torch
 from anndata import AnnData
 from rich import print
-from scvi import REGISTRY_KEYS
+from scvi import REGISTRY_KEYS, settings
 from scvi._types import MinifiedDataType
 from scvi.data import AnnDataManager
 from scvi.data._constants import _ADATA_MINIFY_TYPE_UNS_KEY, ADATA_MINIFY_TYPE
@@ -24,18 +26,21 @@ from scvi.data.fields import (
 )
 from scvi.model._utils import _init_library_size
 from scvi.model.base import (
+    # UnsupervisedTrainingMixin,
     ArchesMixin,
     BaseMinifiedModeModelClass,
-    RNASeqMixin,
-    UnsupervisedTrainingMixin,
+    EmbeddingMixin,
+    # RNASeqMixin,
     VAEMixin,
 )
 from scvi.model.utils import get_minified_adata_scrna
 from scvi.utils import setup_anndata_dsp
 from sklearn.neighbors import NearestNeighbors
 
-from ._module import nicheVAE
 from ._constants import NICHEVI_REGISTRY_KEYS
+from ._module import nicheVAE
+from ._rnamixin import NicheRNASeqMixin
+from ._training_mixin import UnsupervisedTrainingMixin
 
 _SCVI_LATENT_QZM = "_scvi_latent_qzm"
 _SCVI_LATENT_QZV = "_scvi_latent_qzv"
@@ -45,7 +50,8 @@ logger = logging.getLogger(__name__)
 
 
 class nicheSCVI(
-    RNASeqMixin,
+    EmbeddingMixin,
+    NicheRNASeqMixin,
     VAEMixin,
     ArchesMixin,
     UnsupervisedTrainingMixin,
@@ -56,7 +62,10 @@ class nicheSCVI(
     Parameters
     ----------
     adata
-        AnnData object that has been registered via :meth:`~scvi.model.SCVI.setup_anndata`.
+        AnnData object that has been registered via :meth:`~scvi.model.SCVI.setup_anndata`. If
+        ``None``, then the underlying module will not be initialized until training, and a
+        :class:`~lightning.pytorch.core.LightningDataModule` must be passed in during training
+        (``EXPERIMENTAL``).
     n_hidden
         Number of nodes per hidden layer.
     n_latent
@@ -83,8 +92,8 @@ class nicheSCVI(
 
         * ``'normal'`` - Normal distribution
         * ``'ln'`` - Logistic normal distribution (Normal(0, I) transformed by softmax)
-    **model_kwargs
-        Keyword args for :class:`~scvi.module.VAE`
+    **kwargs
+        Additional keyword arguments for :class:`~scvi.module.VAE`.
 
     Examples
     --------
@@ -99,23 +108,21 @@ class nicheSCVI(
     -----
     See further usage examples in the following tutorials:
 
-    1. :doc:`/tutorials/notebooks/api_overview`
-    2. :doc:`/tutorials/notebooks/harmonization`
-    3. :doc:`/tutorials/notebooks/scarches_scvi_tools`
-    4. :doc:`/tutorials/notebooks/scvi_in_R`
+    1. :doc:`/tutorials/notebooks/quick_start/api_overview`
+    2. :doc:`/tutorials/notebooks/scrna/harmonization`
+    3. :doc:`/tutorials/notebooks/scrna/scarches_scvi_tools`
+    4. :doc:`/tutorials/notebooks/scrna/scvi_in_R`
+
+    See Also
+    --------
+    :class:`~scvi.module.VAE`
     """
 
     _module_cls = nicheVAE
 
     def __init__(
         self,
-        adata: AnnData,
-        # n_cell_types: int,
-        ###########
-        # k_nn: int,  # TODO access th obsm keys to infer these parameters from the data!
-        # n_latent_z1: int,
-        ###########
-        # niche_kl_weight: float = 1.0,
+        adata: AnnData | None = None,
         n_hidden: int = 128,
         n_latent: int = 10,
         n_layers: int = 1,
@@ -123,172 +130,92 @@ class nicheSCVI(
         dispersion: Literal["gene", "gene-batch", "gene-label", "gene-cell"] = "gene",
         gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
         latent_distribution: Literal["normal", "ln"] = "normal",
-        **model_kwargs,
+        **kwargs,
     ):
         super().__init__(adata)
 
-        n_cats_per_cov = (
-            self.adata_manager.get_state_registry(
-                REGISTRY_KEYS.CAT_COVS_KEY
-            ).n_cats_per_key
-            if REGISTRY_KEYS.CAT_COVS_KEY in self.adata_manager.data_registry
-            else None
-        )
-        n_batch = self.summary_stats.n_batch
-        use_size_factor_key = (
-            REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
-        )
-        library_log_means, library_log_vars = None, None
-        if not use_size_factor_key and self.minified_data_type is None:
-            library_log_means, library_log_vars = _init_library_size(
-                self.adata_manager, n_batch
-            )
-
-        self.k_nn = self.summary_stats.n_niche_indexes
-        self.n_latent_mean = self.summary_stats.n_latent_mean
-        self.n_cell_types = (
-            self.summary_stats.n_niche_composition
-        )  # TODO remove this, you have n_labels already
-
-        self.module = self._module_cls(
-            n_input=self.summary_stats.n_vars,
-            n_output_niche=self.n_latent_mean,
-            k_nn=self.k_nn,
-            ###########
-            n_cell_types=self.n_cell_types,
-            ###########
-            n_batch=n_batch,
-            n_labels=self.summary_stats.n_labels,
-            n_continuous_cov=self.summary_stats.get("n_extra_continuous_covs", 0),
-            n_cats_per_cov=n_cats_per_cov,
-            n_hidden=n_hidden,
-            n_latent=n_latent,
-            n_layers=n_layers,
-            dropout_rate=dropout_rate,
-            dispersion=dispersion,
-            gene_likelihood=gene_likelihood,
-            latent_distribution=latent_distribution,
-            use_size_factor_key=use_size_factor_key,
-            library_log_means=library_log_means,
-            library_log_vars=library_log_vars,
-            **model_kwargs,
-        )
-        self.module.minified_data_type = self.minified_data_type
+        self._module_kwargs = {
+            "n_hidden": n_hidden,
+            "n_latent": n_latent,
+            "n_layers": n_layers,
+            "dropout_rate": dropout_rate,
+            "dispersion": dispersion,
+            "gene_likelihood": gene_likelihood,
+            "latent_distribution": latent_distribution,
+            **kwargs,
+        }
         self._model_summary_string = (
-            "nicheVI Model with the following params: \nn_hidden: {}, n_latent: {}, n_layers: {}, dropout_rate: "
-            "{}, dispersion: {}, gene_likelihood: {}, latent_distribution: {}"
-        ).format(
-            n_hidden,
-            n_latent,
-            n_layers,
-            dropout_rate,
-            dispersion,
-            gene_likelihood,
-            latent_distribution,
-        )
-        self.init_params_ = self._get_init_params(locals())
-
-    @torch.inference_mode()
-    def predict_neighborhood(
-        self,
-        adata: Optional[AnnData] = None,
-        indices: Optional[Sequence[int]] = None,
-        batch_size: Optional[int] = None,
-    ):
-        self._check_if_trained(warn=False)
-
-        adata = self._validate_anndata(adata)
-        scdl = self._make_data_loader(
-            adata=adata, indices=indices, batch_size=batch_size
+            "nicheVI model with the following parameters: \n"
+            f"n_hidden: {n_hidden}, n_latent: {n_latent}, n_layers: {n_layers}, "
+            f"dropout_rate: {dropout_rate}, dispersion: {dispersion}, "
+            f"gene_likelihood: {gene_likelihood}, latent_distribution: {latent_distribution}."
         )
 
-        ct_prediction = []
-        for tensors in scdl:
-            inference_inputs = self.module._get_inference_input(tensors)
-            outputs = self.module.inference(**inference_inputs)
-
-            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
-            decoder_input = outputs["qz"].loc[..., : self.module.n_latent_niche]
-
-            # put batch_index in the same device as decoder_input
-            batch_index = batch_index.to(decoder_input.device)
-
-            predicted_ct = self.module.composition_decoder(
-                decoder_input,
-                batch_index,
-            )  # no batch correction here
-
-            if self.module.compo_transform == "none":
-                # predicted_ct_temperature = predicted_ct / self.module.compo_temperature
-                # predicted_ct_prob = F.softmax(predicted_ct_temperature, dim=-1)
-                predicted_ct_prob = predicted_ct.mean
-
-            elif self.module.compo_transform == "log_softmax":
-                predicted_ct_prob = torch.exp(predicted_ct)
-            elif self.module.compo_transform == "log_compo":
-                predicted_ct_prob = torch.exp(predicted_ct)
-            # TODO maybe replace elif by else? meaning either you provide
-            # raw logits and you softmax it or you provide log_probas from
-            # the definition of the model and you just exponentiate it.
-
-            ct_prediction.append(predicted_ct_prob.detach().cpu())
-
-        return torch.cat(ct_prediction).numpy()
-
-    @torch.inference_mode()
-    def predict_niche_activation(
-        self,
-        adata: Optional[AnnData] = None,
-        indices: Optional[Sequence[int]] = None,
-        batch_size: Optional[int] = None,
-    ):
-        self._check_if_trained(warn=False)
-
-        adata = self._validate_anndata(adata)
-        scdl = self._make_data_loader(
-            adata=adata, indices=indices, batch_size=batch_size
-        )
-
-        activation_prediction = []
-        for tensors in scdl:
-            inference_inputs = self.module._get_inference_input(tensors)
-            outputs = self.module.inference(**inference_inputs)
-
-            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
-            decoder_input = outputs["qz"].loc[..., : self.module.n_latent_niche]
-
-            # put batch_index in the same device as decoder_input
-            batch_index = batch_index.to(decoder_input.device)
-
-            niche_mean, niche_variance = self.module.niche_decoder(
-                decoder_input,
-                batch_index,
+        if self._module_init_on_train:
+            self.module = None
+            warnings.warn(
+                "Model was initialized without `adata`. The module will be initialized when "
+                "calling `train`. This behavior is experimental and may change in the future.",
+                UserWarning,
+                stacklevel=settings.warnings_stacklevel,
             )
+        else:
+            n_cats_per_cov = (
+                self.adata_manager.get_state_registry(
+                    REGISTRY_KEYS.CAT_COVS_KEY
+                ).n_cats_per_key
+                if REGISTRY_KEYS.CAT_COVS_KEY in self.adata_manager.data_registry
+                else None
+            )
+            n_batch = self.summary_stats.n_batch
+            use_size_factor_key = (
+                REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
+            )
+            library_log_means, library_log_vars = None, None
+            if not use_size_factor_key and self.minified_data_type is None:
+                library_log_means, library_log_vars = _init_library_size(
+                    self.adata_manager, n_batch
+                )
+            self.module = self._module_cls(
+                n_input=self.summary_stats.n_vars,
+                n_output_niche=self.summary_stats.n_latent_mean,
+                n_batch=n_batch,
+                n_labels=self.summary_stats.n_labels,
+                n_continuous_cov=self.summary_stats.get("n_extra_continuous_covs", 0),
+                n_cats_per_cov=n_cats_per_cov,
+                n_hidden=n_hidden,
+                n_latent=n_latent,
+                n_layers=n_layers,
+                dropout_rate=dropout_rate,
+                dispersion=dispersion,
+                gene_likelihood=gene_likelihood,
+                latent_distribution=latent_distribution,
+                use_size_factor_key=use_size_factor_key,
+                library_log_means=library_log_means,
+                library_log_vars=library_log_vars,
+                **kwargs,
+            )
+            self.module.minified_data_type = self.minified_data_type
 
-            activation_prediction.append(niche_mean.detach().cpu())
-
-        return torch.cat(activation_prediction).numpy()
+        self.init_params_ = self._get_init_params(locals())
 
     def preprocessing_anndata(
         adata: AnnData,
-        niche_composition_key: Optional[str] = None,
-        niche_indexes_key: Optional[str] = None,
-        niche_distances_key: Optional[str] = None,
+        label_key: str,
+        sample_key: str,
+        cell_coordinates_key: str,
+        k_nn: int,
+        latent_mean_key: str,
+        latent_mean_niche_key: str,
+        niche_composition_key: str,
+        niche_indexes_key: str,
+        niche_distances_key: str | None = None,
         ###########
-        niche_type_key: Optional[str] = None,
-        niche_treshold: float = 0.2,
-        cell_type_for_niches: Optional[list[str]] = None,
+        niche_type_key: str | None = None,
+        niche_treshold: float | None = 0.2,
+        cell_type_for_niches: list[str] | None = None,
         ###########
-        label_key: Optional[str] = None,
-        sample_key: Optional[str] = None,
-        cell_coordinates_key: Optional[str] = None,
-        k_nn: int = 10,
-        latent_mean_key: Optional[str] = None,
-        # latent_var_key: Optional[str] = None,
-        latent_mean_niche_keys: Optional[list] = None,
-        # latent_var_niche_keys: Optional[str] = None,
-        # zero_prior: bool = True,
-        ###########
+        log1p: bool = False,
     ):
         adata.obsm[niche_indexes_key] = np.zeros(
             (adata.n_obs, k_nn)
@@ -330,10 +257,8 @@ class nicheSCVI(
             labels_key=label_key,
             niche_indexes_key=niche_indexes_key,
             latent_mean_key=latent_mean_key,
-            # latent_var_key=latent_var_key,
-            latent_mean_ct_keys=latent_mean_niche_keys,
-            # latent_var_ct_keys=latent_var_niche_keys,
-            # zero_prior=zero_prior,
+            latent_mean_ct_key=latent_mean_niche_key,
+            log1p=log1p,
         )
 
         return None
@@ -343,26 +268,21 @@ class nicheSCVI(
     def setup_anndata(
         cls,
         adata: AnnData,
-        # --specific to nicheVI
+        ############################
         niche_composition_key: str,
         niche_indexes_key: str,
-        niche_distances_key: str,
-        # ---------------------
-        layer: Optional[str] = None,
-        batch_key: Optional[str] = None,
-        labels_key: Optional[str] = None,
-        size_factor_key: Optional[str] = None,
-        latent_mean_key: Optional[str] = None,
-        latent_var_key: Optional[
-            str
-        ] = None,  # TODO remove what is not used anymore (i.e. var keys)
-        latent_mean_ct_key: Optional[str] = None,
-        latent_var_ct_key: Optional[str] = None,
-        ###########
-        # ---------------------
-        categorical_covariate_keys: Optional[list[str]] = None,
-        continuous_covariate_keys: Optional[list[str]] = None,
-        cell_index_key="cell_index",
+        niche_distances_key: str | None = None,
+        ############################
+        layer: str | None = None,
+        batch_key: str | None = None,
+        labels_key: str | None = None,
+        size_factor_key: str | None = None,
+        categorical_covariate_keys: list[str] | None = None,
+        continuous_covariate_keys: list[str] | None = None,
+        ############################
+        latent_mean_key: str | None = None,
+        latent_mean_ct_key: str | None = None,
+        ############################
         **kwargs,
     ):
         """%(summary)s.
@@ -377,12 +297,6 @@ class nicheSCVI(
         %(param_cat_cov_keys)s
         %(param_cont_cov_keys)s
         """
-        # adata.obsm[niche_indexes_key] = np.zeros((adata.n_obs, k_nn))
-        # adata.obsm[niche_distances_key] = np.zeros((adata.n_obs, k_nn))
-        # n_cell_types = len(adata.obs[labels_key].unique())
-        # adata.obsm[niche_composition_key] = np.zeros((adata.n_obs, n_cell_types))
-        adata.obs[cell_index_key] = adata.obs.reset_index().index.astype(int)
-
         setup_method_args = cls._get_setup_method_args(**locals())
         anndata_fields = [
             LayerField(REGISTRY_KEYS.X_KEY, layer, is_count_data=True),
@@ -400,18 +314,11 @@ class nicheSCVI(
             ObsmField(
                 NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY, niche_composition_key
             ),
-            # ObsmField(REGISTRY_KEYS.NICHE_DISTANCES_KEY, niche_distances_key),
             ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_INDEXES_KEY, niche_indexes_key),
+            ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_DISTANCES_KEY, niche_distances_key),
             ObsmField(NICHEVI_REGISTRY_KEYS.Z1_MEAN_KEY, latent_mean_key),
-            # ObsmField(REGISTRY_KEYS.Z1_VAR_KEY, latent_var_key),
             ObsmField(NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY, latent_mean_ct_key),
-            # ObsmField(REGISTRY_KEYS.Z1_VAR_CT_KEY, latent_var_ct_key),
-            # ObsmField(REGISTRY_KEYS.Z1_MEAN_KNN_KEY, latent_mean_knn_key),
-            NumericalObsField(
-                REGISTRY_KEYS.INDICES_KEY, cell_index_key, required=False
-            ),
         ]
-
         # register new fields if the adata is minified
         adata_minify_type = _get_adata_minify_type(adata)
         if adata_minify_type is not None:
@@ -426,7 +333,7 @@ class nicheSCVI(
     def _get_fields_for_adata_minification(
         minified_data_type: MinifiedDataType,
     ) -> list[BaseAnnDataField]:
-        """Return the anndata fields required for adata minification of the given minified_data_type."""
+        """Return the fields required for adata minification of the given minified_data_type."""
         if minified_data_type == ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
             fields = [
                 ObsmField(
@@ -462,7 +369,8 @@ class nicheSCVI(
 
         Minifies the adata, and registers new anndata fields: latent qzm, latent qzv, adata uns
         containing minified-adata type, and library size.
-        This also sets the appropriate property on the module to indicate that the adata is minified.
+        This also sets the appropriate property on the module to indicate that the adata is
+        minified.
 
         Parameters
         ----------
@@ -505,14 +413,105 @@ class nicheSCVI(
         )
         self.module.minified_data_type = minified_data_type
 
+    @torch.inference_mode()
+    def get_niche_attention(
+        self,
+        adata: AnnData | None = None,
+        indices: np.ndarray | None = None,
+        batch_size: int = 1024,
+    ) -> np.ndarray:
+        """description
+
+        Parameters
+        ----------
+        adata
+            AnnData object. If ``None``, the model's ``adata`` will be used.
+        indices
+            Indices of cells to use. If ``None``, all cells will be used.
+        batch_size
+            Minibatch size to use during inference.
+
+        Returns
+        -------
+        niche_attention
+            Attention weights for each cell in the dataset.
+        """
+        self._check_if_trained(warn=False)
+
+        adata = self._validate_anndata(adata)
+        scdl = self._make_data_loader(
+            adata=adata, indices=indices, batch_size=batch_size
+        )
+
+        if self.module.attention_decoder is False:
+            raise ValueError(
+                "The model was not trained with the attention_decoder parameter set to True. "
+                "Please retrain the model with the attention_decoder parameter set to True."
+            )
+
+        attention_weights = []
+        for tensors in scdl:
+            inference_inputs = self.module._get_inference_input(tensors)
+            outputs = self.module.inference(**inference_inputs)
+
+            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
+            decoder_input = outputs["qz"].loc
+
+            # put batch_index in the same device as decoder_input
+            batch_index = batch_index.to(decoder_input.device)
+
+            niche_mean, niche_variance, niche_attention = self.module.niche_decoder(
+                decoder_input,
+                batch_index,
+            )
+
+            attention_weights.append(niche_attention.detach().cpu())
+
+        return torch.cat(attention_weights).numpy()
+
+    def get_cell_type_attention(
+        self,
+        adata: AnnData | None = None,
+        attention_key: str = "attention_weights",
+        cell_type_key: str = "cell_type",
+        compute_attention: bool = True,
+    ):
+        if self.module.attention_decoder is False:
+            raise ValueError(
+                "The model was not trained with the attention_decoder parameter set to True. "
+                "Please retrain the model with the attention_decoder parameter set to True."
+            )
+
+        self._check_if_trained(warn=False)
+
+        adata = self._validate_anndata(adata)
+
+        cell_types = adata.obs[cell_type_key].unique().tolist()
+        cell_type_to_int = {cell_types[i]: i for i in range(len(cell_types))}
+
+        if compute_attention:
+            attention_weights = self.get_niche_attention(adata=adata)
+
+        else:
+            attention_weights = adata.obsm[attention_key]
+
+        attention_weights = attention_weights[:, 1:, 1:]
+
+        token_attention_weights = {
+            token_name: attention_weights[:, token_idx, :]
+            for token_name, token_idx in cell_type_to_int.items()
+        }
+
+        return token_attention_weights
+
 
 def get_niche_indexes(
     adata: AnnData,
     sample_key: str,
     niche_indexes_key: str,
-    niche_distances_key: Optional[str],
     cell_coordinates_key: str,
     k_nn: int,
+    niche_distances_key: str | None = None,
 ):
     adata.obs["index"] = np.arange(adata.shape[0])
     # build a dictionnary giving the index of each 'donor_slice' observation:
@@ -539,10 +538,6 @@ def get_niche_indexes(
 
         # Find the indices of the kNN for each point
         distances, indices = knn.kneighbors(sample_coord)
-
-        # apply an inverse exp transformation to the distances
-        # distances = np.exp(-(distances**2)) - or inverse of the distance
-        # distances[:, 1:] = 1 / distances[:, 1:]  #TODO remove this is not used anymore
 
         # Store the indices in the adata object
         sample_global_index = donor_slice_index[sample][indices].astype(int)
@@ -614,7 +609,7 @@ def get_neighborhood_composition(
 
 def get_cell_niches(
     adata: AnnData,
-    cell_types_to_include: Optional[list[str]] = None,
+    cell_types_to_include: list[str] | None = None,
     treshold: float = 0.2,
     niche_type_key: str = "niche_type",
     niche_composition_key: str = "niche_composition",
@@ -644,10 +639,9 @@ def get_average_latent_per_celltype(
     adata: AnnData,
     labels_key: str,
     niche_indexes_key: str,
-    latent_mean_key: Optional[str] = None,
-    # latent_var_key: Optional[str] = None,
-    latent_mean_ct_keys: list[str] = ["qz1_m_niche_ct"],
-    # zero_prior: bool = True,
+    latent_mean_key: str | None = None,
+    latent_mean_ct_key: str = "qz1_m_niche_ct",
+    log1p: bool = False,
 ):
     # for each cell, take the average of the latent space for each label, namely the label-averaged latent_mean obsm
 
@@ -663,106 +657,55 @@ def get_average_latent_per_celltype(
     n_latent_z1 = adata.obsm[latent_mean_key].shape[1]
     niche_indexes = adata.obsm[niche_indexes_key]
 
-    z1_mean_niches = adata.obsm[latent_mean_key][niche_indexes]
+    if log1p:
+        z1_mean_niches = np.log1p(adata.obsm[latent_mean_key])[niche_indexes]
 
-    if "qz1_m_niche_ct" in latent_mean_ct_keys:
-        cell_types = adata.obs[labels_key].unique().tolist()
+    else:
+        z1_mean_niches = adata.obsm[latent_mean_key][niche_indexes]
 
-        cell_type_to_int = {cell_types[i]: i for i in range(len(cell_types))}
-        integer_vector = np.vectorize(cell_type_to_int.get)(adata.obs[labels_key])
+    cell_types = adata.obs[labels_key].unique().tolist()
 
-        # For each cell, get the cell types of its neighbors (as integers)
-        cell_types_in_the_neighborhood = np.vstack(
-            [integer_vector[niche_indexes[cell, :]] for cell in range(n_cells)]
-        )
+    cell_type_to_int = {cell_types[i]: i for i in range(len(cell_types))}
+    integer_vector = np.vectorize(cell_type_to_int.get)(adata.obs[labels_key])
 
-        dict_of_cell_type_indices = {}
+    # For each cell, get the cell types of its neighbors (as integers)
+    cell_types_in_the_neighborhood = np.vstack(
+        [integer_vector[niche_indexes[cell, :]] for cell in range(n_cells)]
+    )
 
-        for cell_type, cell_type_idx in cell_type_to_int.items():
-            ct_row_indices, ct_col_indices = np.where(
-                cell_types_in_the_neighborhood == cell_type_idx
-            )  # [1]
+    dict_of_cell_type_indices = {}
 
-            # dict of cells:local index of the cells of cell_type in the neighborhood.
-            result_dict = {}
-            for row_idx, col_idx in zip(ct_row_indices, ct_col_indices):
-                result_dict.setdefault(row_idx, []).append(col_idx)
+    for cell_type, cell_type_idx in cell_type_to_int.items():
+        ct_row_indices, ct_col_indices = np.where(
+            cell_types_in_the_neighborhood == cell_type_idx
+        )  # [1]
 
-            dict_of_cell_type_indices[cell_type] = result_dict
+        # dict of cells:local index of the cells of cell_type in the neighborhood.
+        result_dict = {}
+        for row_idx, col_idx in zip(ct_row_indices, ct_col_indices):
+            result_dict.setdefault(row_idx, []).append(col_idx)
 
-        # print(dict_of_cell_type_indices)
+        dict_of_cell_type_indices[cell_type] = result_dict
 
-        latent_mean_ct_prior = np.zeros((n_cell_types, n_latent_z1))
+    # print(dict_of_cell_type_indices)
 
-        z1_mean_niches_ct = np.stack(
-            [latent_mean_ct_prior] * n_cells, axis=0
-        )  # batch times n_cell_types times n_latent. Initialize your prior with a non-spatial average.
+    latent_mean_ct_prior = np.zeros((n_cell_types, n_latent_z1))
 
-        # outer loop over cell types
-        for cell_type, cell_type_idx in cell_type_to_int.items():
-            ct_dict = dict_of_cell_type_indices[cell_type]
-            # inner loop over every cell that has this cell type in its neighborhood.
-            for cell_idx, neighbor_idxs in ct_dict.items():
-                z1_mean_niches_ct[cell_idx, cell_type_idx, :] = np.mean(
-                    z1_mean_niches[cell_idx, neighbor_idxs, :], axis=0
-                )
+    z1_mean_niches_ct = np.stack(
+        [latent_mean_ct_prior] * n_cells, axis=0
+    )  # batch times n_cell_types times n_latent. Initialize your prior with a non-spatial average.
 
-        adata.obsm["qz1_m_niche_ct"] = z1_mean_niches_ct
+    # outer loop over cell types
+    for cell_type, cell_type_idx in cell_type_to_int.items():
+        ct_dict = dict_of_cell_type_indices[cell_type]
+        # inner loop over every cell that has this cell type in its neighborhood.
+        for cell_idx, neighbor_idxs in ct_dict.items():
+            z1_mean_niches_ct[cell_idx, cell_type_idx, :] = np.mean(
+                z1_mean_niches[cell_idx, neighbor_idxs, :], axis=0
+            )
 
-        print("[bold green]Saved qz1_m_niche_ct in adata.obsm[/bold green]")
+    adata.obsm[latent_mean_ct_key] = z1_mean_niches_ct
+
+    print("[bold green]Saved qz1_m_niche_ct in adata.obsm[/bold green]")
 
     return None
-
-
-def get_cell_type_priors(
-    adata: AnnData,
-    labels_key: str,
-    latent_mean_key: str,
-    latent_var_key: str,
-    zero_prior: bool = False,
-    epsilon: float = 1e-6,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Compute the (non-spatial) prior for each cell type, as the average of the latent space for each cell type.
-
-    Parameters
-    ----------
-    adata
-        AnnData object that has been registered via :meth:`~scvi.model.SCVI.setup_anndata`.
-    labels_key
-        Key for cell type annotation stored in `adata.obs`.
-    latent_mean_key
-        Key for the latent mean stored in `adata.obsm`.
-    latent_var_key
-        Key for the latent variance stored in `adata.obsm`.
-
-    Returns
-    -------
-    latent_mean_priors
-        The prior for the latent mean.
-    latent_var_priors
-        The prior for the latent variance.
-
-    """
-    cell_types = adata.obs[labels_key].unique().tolist()
-    n_cell_types = len(cell_types)
-
-    int_to_cell_types = {i: cell_types[i] for i in range(n_cell_types)}
-    n_latent_z1 = adata.obsm[latent_mean_key].shape[1]
-
-    latent_mean_priors = np.zeros((n_cell_types, n_latent_z1))
-    latent_var_priors = np.zeros_like(latent_mean_priors) + epsilon
-
-    if zero_prior:
-        return latent_mean_priors, latent_var_priors
-
-    for i in range(n_cell_types):
-        type = int_to_cell_types[i]
-        latent_mean_priors[i] = np.mean(
-            adata[adata.obs[labels_key] == type].obsm[latent_mean_key], axis=0
-        )
-        latent_var_priors[i] = np.mean(
-            adata[adata.obs[labels_key] == type].obsm[latent_var_key], axis=0
-        )
-
-    return latent_mean_priors, latent_var_priors

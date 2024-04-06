@@ -5,8 +5,8 @@ from ._de_utils import (
     adjusted_nearest_neighbors,
     corrupt_counts,
 )
-from ._model_v11 import nicheSCVI
-from ._module_v11 import nicheVAE
+from ._model import nicheSCVI
+from ._module import nicheVAE
 
 __all__ = [
     "nicheSCVI",
