@@ -1,0 +1,163 @@
+import numpy as np
+import pandas as pd
+import pytest
+import scvi
+import torch
+from nichevi import nicheSCVI
+from scvi.data import _constants, synthetic_iid
+from scvi.data._compat import LEGACY_REGISTRY_KEY_MAP, registry_from_setup_dict
+from scvi.model.utils import mde
+
+LEGACY_REGISTRY_KEYS = set(LEGACY_REGISTRY_KEY_MAP.values())
+LEGACY_SETUP_DICT = {
+    "scvi_version": "0.0.0",
+    "categorical_mappings": {
+        "_scvi_batch": {
+            "original_key": "testbatch",
+            "mapping": np.array(["batch_0", "batch_1"], dtype=object),
+        },
+        "_scvi_labels": {
+            "original_key": "testlabels",
+            "mapping": np.array(["label_0", "label_1", "label_2"], dtype=object),
+        },
+    },
+    "extra_categoricals": {
+        "mappings": {
+            "cat1": np.array([0, 1, 2, 3, 4]),
+            "cat2": np.array([0, 1, 2, 3, 4]),
+        },
+        "keys": ["cat1", "cat2"],
+        "n_cats_per_key": [5, 5],
+    },
+    "extra_continuous_keys": np.array(["cont1", "cont2"], dtype=object),
+    "data_registry": {
+        "X": {"attr_name": "X", "attr_key": None},
+        "batch_indices": {"attr_name": "obs", "attr_key": "_scvi_batch"},
+        "labels": {"attr_name": "obs", "attr_key": "_scvi_labels"},
+        "cat_covs": {
+            "attr_name": "obsm",
+            "attr_key": "_scvi_extra_categoricals",
+        },
+        "cont_covs": {
+            "attr_name": "obsm",
+            "attr_key": "_scvi_extra_continuous",
+        },
+    },
+    "summary_stats": {
+        "n_batch": 2,
+        "n_cells": 400,
+        "n_vars": 100,
+        "n_labels": 3,
+        "n_proteins": 0,
+        "n_continuous_covs": 2,
+    },
+}
+
+
+N_LAYERS = 1
+N_LATENT = 2
+LIKELIHOOD = "nb"
+K_NN = 5
+
+
+def test_nichevi():
+    adata = synthetic_iid(
+        batch_size=256,
+        n_genes=100,
+        n_proteins=0,
+        n_regions=0,
+        n_batches=2,
+        n_labels=3,
+        dropout_ratio=0.5,
+        generate_coordinates=True,
+        sparse_format=None,
+        return_mudata=False,
+    )
+
+    adata.obsm["qz1_m"] = np.random.normal(size=(adata.shape[0], N_LATENT))
+  
+    nicheSCVI.preprocessing_anndata(
+        adata,
+        niche_composition_key="neighborhood_composition",
+        niche_indexes_key="niche_indexes",
+        niche_distances_key="niche_distances",
+        label_key="labels",
+        sample_key="batch",
+        cell_coordinates_key="coordinates",
+        k_nn=K_NN,
+        latent_mean_key="qz1_m",
+        latent_var_key="qz1_var",
+        # latent_mean_niche_keys=None,
+        latent_mean_niche_keys=["qz1_m_niche_ct"],
+        latent_var_niche_keys=["qz1_var_niche_ct"],
+        latent_mean_knn_key="latent_mean_knn",
+        zero_prior=True,
+    )
+
+    nicheSCVI.setup_anndata(
+        adata,
+        batch_key="batch",
+        labels_key="labels",
+        niche_composition_key="neighborhood_composition",
+        niche_indexes_key="niche_indexes",
+        niche_distances_key="niche_distances",
+        latent_mean_key="qz1_m",
+        latent_var_key="qz1_var",
+        latent_mean_ct_key="qz1_m_niche_ct",
+        latent_var_ct_key="qz1_var_niche_ct",
+    )
+
+    niche_setup = {
+        "r1_kl1_c1_n1": {
+            "cell_rec_weight": 1.0,
+            "niche_rec_weight": 1.0,
+            "niche_compo_weight": 1.0,
+            "latent_kl_weight": 1.0,
+        },
+        "r0_kl0_c0_n0": {
+            "cell_rec_weight": 0.0,
+            "niche_rec_weight": 0.0,
+            "niche_compo_weight": 0.0,
+            "latent_kl_weight": 0.0,
+        },
+    }
+
+    setup_dict = niche_setup["r0_kl0_c0_n0"]
+
+    vae = nicheSCVI(
+        adata,
+        cell_rec_weight=setup_dict["cell_rec_weight"],
+        niche_rec_weight=setup_dict["niche_rec_weight"],
+        niche_compo_weight=setup_dict["niche_compo_weight"],
+        latent_kl_weight=setup_dict["latent_kl_weight"],
+        niche_components="cell_type_unweighted",
+        niche_combination="observed",
+        gene_likelihood=LIKELIHOOD,
+        n_layers=N_LAYERS,
+        n_latent=N_LATENT,
+        compo_transform="none",
+        compo_temperature=1,
+        use_batch_norm="both",
+        use_layer_norm="none",
+    )
+
+    # vae.train(1)
+    # print("I am here")
+    vae.train(
+        3,
+        plan_kwargs=dict(weight_decay=1e-3, n_epochs_kl_warmup=None),
+        check_val_every_n_epoch=1,
+    )
+    vae.get_elbo(indices=vae.validation_indices)
+    vae.get_normalized_expression()
+    vae.get_latent_representation()
+    vae.predict_neighborhood()  # specific to nicheSCVI
+    vae.predict_niche_activation()  # specific to nicheSCVI
+    print("Finished training")
+    vae.differential_expression(groupby="labels", group1="label_1")
+    vae.differential_expression(groupby="labels", group1="label_1", group2="label_2")
+
+
+test_nichevi()
+
+print("nicheSCVI test passed")
