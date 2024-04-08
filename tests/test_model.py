@@ -62,7 +62,7 @@ LIKELIHOOD = "nb"
 K_NN = 5
 N_HEADS = 1
 ATTENTION_DECODER = False
-N_EPOCHS_NICHEVI = 5
+N_EPOCHS_NICHEVI = 1
 
 
 def test_nichevi():

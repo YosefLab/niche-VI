@@ -5,6 +5,8 @@ from scvi.model.base._differential import DifferentialComputation
 from scvi.model.base._utils import _fdr_de_prediction, _prepare_obs
 from scvi.utils import track
 
+from ._de_utils import _get_nonzero_indices_from_rows, adjusted_nearest_neighbors
+
 
 def _de_core(
     adata_manager,
@@ -25,6 +27,13 @@ def _de_core(
     batch_correction,
     fdr,
     silent,
+    ###### NicheSCVI specific ######
+    compute_neighborhood_de: bool = False,
+    sample_key="sample",
+    cell_coordinates_key="spatial",
+    label_key="labels",
+    radius=100,
+    k_nn=None,
     **kwargs,
 ):
     """Internal function for DE interface."""
@@ -47,7 +56,23 @@ def _de_core(
         adata.obs[temp_key] = obs_col
         groupby = temp_key
 
-    df_results = []
+    if compute_neighborhood_de:
+
+        A = adjusted_nearest_neighbors(
+            adata,
+            sample_key=sample_key,
+            cell_coordinates_key=cell_coordinates_key,
+            label_key=label_key,
+            radius=radius,
+            k_nn=k_nn,
+            return_sparse=True,
+        )
+    # df_results = []
+    DE_results = {
+        "group1_group2": [],
+        "group1_niche1": [],
+        "group2_niche2": [],
+    }
     dc = DifferentialComputation(model_fn, representation_fn, adata_manager)
     for g1 in track(
         group1,
@@ -60,36 +85,52 @@ def _de_core(
         else:
             cell_idx2 = (adata.obs[groupby] == group2).to_numpy().ravel()
 
-        all_info = dc.get_bayes_factors(
-            cell_idx1,
-            cell_idx2,
-            mode=mode,
-            delta=delta,
-            batchid1=batchid1,
-            batchid2=batchid2,
-            use_observed_batches=not batch_correction,
-            **kwargs,
-        )
+        neighbors_idx1 = _get_nonzero_indices_from_rows(A, cell_idx1)
+        neighbors_idx2 = _get_nonzero_indices_from_rows(A, cell_idx2)
 
-        if all_stats is True:
-            genes_properties_dict = all_stats_fn(adata_manager, cell_idx1, cell_idx2)
-            all_info = {**all_info, **genes_properties_dict}
+        DE_indices = {
+            "group1_group2": [cell_idx1, cell_idx2],
+            "group1_niche1": [cell_idx1, neighbors_idx1],
+            "group2_niche2": [cell_idx2, neighbors_idx2],
+        }
 
-        res = pd.DataFrame(all_info, index=col_names)
-        sort_key = "proba_de" if mode == "change" else "bayes_factor"
-        res = res.sort_values(by=sort_key, ascending=False)
-        if mode == "change":
-            res[f"is_de_fdr_{fdr}"] = _fdr_de_prediction(res["proba_de"], fdr=fdr)
-        if idx1 is None:
-            g2 = "Rest" if group2 is None else group2
-            res["comparison"] = f"{g1} vs {g2}"
-            res["group1"] = g1
-            res["group2"] = g2
-        df_results.append(res)
+        for comparison, [cell_idx1, cell_idx2] in DE_indices.items():
+            print(f"Running DE for {comparison}")
+
+            all_info = dc.get_bayes_factors(
+                cell_idx1,
+                cell_idx2,
+                mode=mode,
+                delta=delta,
+                batchid1=batchid1,
+                batchid2=batchid2,
+                use_observed_batches=not batch_correction,
+                **kwargs,
+            )
+
+            if all_stats is True:
+                genes_properties_dict = all_stats_fn(
+                    adata_manager, cell_idx1, cell_idx2
+                )
+                all_info = {**all_info, **genes_properties_dict}
+
+            res = pd.DataFrame(all_info, index=col_names)
+            sort_key = "proba_de" if mode == "change" else "bayes_factor"
+            res = res.sort_values(by=sort_key, ascending=False)
+            if mode == "change":
+                res[f"is_de_fdr_{fdr}"] = _fdr_de_prediction(res["proba_de"], fdr=fdr)
+            if idx1 is None:
+                g2 = "Rest" if group2 is None else group2
+                res["comparison"] = f"{g1} vs {g2}"
+                res["group1"] = g1
+                res["group2"] = g2
+            DE_results[comparison].append(res)
 
     if temp_key is not None:
         del adata.obs[temp_key]
 
-    result = pd.concat(df_results, axis=0)
+    for key, value in DE_results.items():
+        DE_results[key] = pd.concat(value, axis=0)
+    # result = pd.concat(df_results, axis=0)
 
-    return result
+    return DE_results

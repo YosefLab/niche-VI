@@ -7,8 +7,11 @@ from scvi.model._utils import scrna_raw_counts_properties
 from scvi.model.base import (
     RNASeqMixin,
 )
-from scvi.model.base._utils import _de_core
+
+# from scvi.model.base._utils import _de_core
 from scvi.utils import de_dsp
+
+from .differential_expression import _de_core
 
 
 class NicheRNASeqMixin(RNASeqMixin):
@@ -78,8 +81,6 @@ class NicheRNASeqMixin(RNASeqMixin):
         -------
         Differential expression DataFrame.
         """
-        from ._de_utils import adjusted_nearest_neighbors
-
         adata = self._validate_anndata(adata)
         col_names = adata.var_names
         importance_weighting_kwargs = importance_weighting_kwargs or {}
@@ -95,19 +96,7 @@ class NicheRNASeqMixin(RNASeqMixin):
             self.get_latent_representation if filter_outlier_cells else None
         )
 
-        if compute_neighborhood_de:
-
-            A = adjusted_nearest_neighbors(
-                adata,
-                sample_key=sample_key,
-                cell_coordinates_key=cell_coordinates_key,
-                label_key=label_key,
-                radius=radius,
-                k_nn=k_nn,
-                return_sparse=True,
-            )
-
-        result_group1_group2 = _de_core(
+        result = _de_core(
             self.get_anndata_manager(adata, required=True),
             model_fn,
             representation_fn,
@@ -126,7 +115,13 @@ class NicheRNASeqMixin(RNASeqMixin):
             batch_correction,
             fdr_target,
             silent,
+            compute_neighborhood_de=compute_neighborhood_de,
+            sample_key=sample_key,
+            cell_coordinates_key=cell_coordinates_key,
+            label_key=label_key,
+            radius=radius,
+            k_nn=k_nn,
             **kwargs,
         )
 
-        return result_group1_group2
+        return result
