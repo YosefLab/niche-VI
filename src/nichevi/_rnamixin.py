@@ -33,6 +33,13 @@ class NicheRNASeqMixin(RNASeqMixin):
         weights: Literal["uniform", "importance"] | None = "uniform",
         filter_outlier_cells: bool = False,
         importance_weighting_kwargs: dict | None = None,
+        ###### NicheSCVI specific ######
+        compute_neighborhood_de: bool = False,
+        sample_key="sample",
+        cell_coordinates_key="spatial",
+        label_key="labels",
+        radius=100,
+        k_nn=None,
         **kwargs,
     ) -> pd.DataFrame:
         r"""A unified method for differential expression analysis.
@@ -71,6 +78,8 @@ class NicheRNASeqMixin(RNASeqMixin):
         -------
         Differential expression DataFrame.
         """
+        from ._de_utils import adjusted_nearest_neighbors
+
         adata = self._validate_anndata(adata)
         col_names = adata.var_names
         importance_weighting_kwargs = importance_weighting_kwargs or {}
@@ -86,7 +95,19 @@ class NicheRNASeqMixin(RNASeqMixin):
             self.get_latent_representation if filter_outlier_cells else None
         )
 
-        result = _de_core(
+        if compute_neighborhood_de:
+
+            A = adjusted_nearest_neighbors(
+                adata,
+                sample_key=sample_key,
+                cell_coordinates_key=cell_coordinates_key,
+                label_key=label_key,
+                radius=radius,
+                k_nn=k_nn,
+                return_sparse=True,
+            )
+
+        result_group1_group2 = _de_core(
             self.get_anndata_manager(adata, required=True),
             model_fn,
             representation_fn,
@@ -108,4 +129,4 @@ class NicheRNASeqMixin(RNASeqMixin):
             **kwargs,
         )
 
-        return result
+        return result_group1_group2
