@@ -170,8 +170,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         niche_rec_weight: float = 1.0,
         compo_rec_weight: float = 1.0,
         ##############################
-        attention_decoder: bool = False,
-        n_heads: int = 2,
+        n_heads: int | None = 2,
         ##############################
         encode_covariates: bool = False,
         deeply_inject_covariates: bool = True,
@@ -212,7 +211,6 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         ##############################
         self.n_output_niche = n_output_niche
         self.niche_likelihood = niche_likelihood
-        self.attention_decoder = attention_decoder
         self.n_heads = n_heads
 
         if not self.use_observed_lib_size:
@@ -317,7 +315,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
             **_extra_decoder_kwargs,
         )
 
-        if self.attention_decoder:
+        if n_heads is not None: 
 
             self.niche_decoder = NicheDecoderAttention(
                 n_input=n_input_decoder,
@@ -499,9 +497,8 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         n_samples: int = 1,
     ) -> dict[str, torch.Tensor | None]:
         """Run the cached inference process."""
-        from torch.distributions import Normal
-
         from scvi.data._constants import ADATA_MINIFY_TYPE
+        from torch.distributions import Normal
 
         if self.minified_data_type != ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
             raise NotImplementedError(
@@ -627,7 +624,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
             decoder_input, batch_index, *categorical_input
         )  # DirichletDecoder, niche_composition is a distribution
 
-        if self.attention_decoder:
+        if self.n_heads is not None:
             if self.batch_representation == "embedding":
                 niche_mean, niche_variance, niche_attention = self.niche_decoder(
                     decoder_input, *categorical_input

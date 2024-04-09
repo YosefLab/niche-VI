@@ -61,7 +61,6 @@ N_LATENT = 10
 LIKELIHOOD = "nb"
 K_NN = 5
 N_HEADS = 1
-ATTENTION_DECODER = False
 N_EPOCHS_NICHEVI = 1
 
 
@@ -143,7 +142,6 @@ def test_nichevi():
         n_latent=N_LATENT,
         use_batch_norm="both",
         use_layer_norm="none",
-        attention_decoder=ATTENTION_DECODER,
     )
 
     nichevae.train(
