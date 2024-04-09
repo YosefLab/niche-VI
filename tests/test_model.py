@@ -57,7 +57,7 @@ LEGACY_SETUP_DICT = {
 
 
 N_LAYERS = 1
-N_LATENT = 2
+N_LATENT = 10
 LIKELIHOOD = "nb"
 K_NN = 5
 N_HEADS = 1
@@ -168,20 +168,32 @@ def test_nichevi():
     print("Finished training")
 
     nichevae.get_elbo(indices=nichevae.validation_indices)
-    nichevae.get_normalized_expression()
-    nichevae.get_latent_representation()
+    # nichevae.get_normalized_expression()
+    # nichevae.get_latent_representation()
     # nichevae.predict_neighborhood()  # specific to nicheSCVI
     # nichevae.predict_niche_activation()  # specific to nicheSCVI
     nichevae.differential_expression(
         groupby="labels",
         group1="label_1",
         batch_correction=False,
+        compute_neighborhood_de=True,
+        sample_key="batch",
+        cell_coordinates_key="coordinates",
+        label_key="labels",
+        radius=50,
+        k_nn=None,
     )
     nichevae.differential_expression(
         groupby="labels",
         group1="label_1",
         group2="label_2",
         batch_correction=False,
+        compute_neighborhood_de=True,
+        sample_key="batch",
+        cell_coordinates_key="coordinates",
+        label_key="labels",
+        radius=50,
+        k_nn=None,
     )
 
 

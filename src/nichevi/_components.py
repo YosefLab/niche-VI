@@ -231,19 +231,20 @@ class NicheDecoder(nn.Module):
         # Parameters for latent distribution
         p = self.decoder(x, *cat_list)
         p_m = self.mean_decoder(p)
-        p_v = torch.nn.Softplus()(
-            self.var_decoder(p)
-        )  # changed exp to softplus todo add eps to p_v
+        p_v = torch.nn.Softplus()(self.var_decoder(p))  # changed exp to softplus todo add eps to p_v
 
-        p_m = p_m.reshape(p_m.shape[0], self.n_niche_components, self.n_output)
+        if p.ndim == 2:
+            p_m = p_m.view(p_m.shape[0], self.n_niche_components, self.n_output)
+            p_v = p_v.view(p_v.shape[0], self.n_niche_components, self.n_output)
 
-        p_v = p_v.reshape(p_v.shape[0], self.n_niche_components, self.n_output)
+        if p.ndim == 3:
+            p_m = p_m.view(-1, p_m.shape[1], self.n_niche_components, self.n_output)
+            p_v = p_v.view(-1, p_v.shape[1], self.n_niche_components, self.n_output)
 
         return p_m, p_v
 
 
 class NicheDecoderAttention(nn.Module):
-
     def __init__(
         self,
         n_input: int,
@@ -320,10 +321,7 @@ class NicheDecoderAttention(nn.Module):
 
         self.dist_decoder = nn.Linear(n_input_attention, 2 * n_output)
 
-    def forward(
-        self, z: torch.Tensor, *cat_list: int, eps: float = 1e-6
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-
+    def forward(self, z: torch.Tensor, *cat_list: int, eps: float = 1e-6) -> Tuple[torch.Tensor, torch.Tensor]:
         # Project the input
         z_proj = self.z_proj(z, *cat_list)
         z_proj = self.z_proj_linear(z_proj)
@@ -334,9 +332,7 @@ class NicheDecoderAttention(nn.Module):
         )  # TODO test without layer norm also
 
         # cell_type_embeddings = self.cell_type_embedding.weight
-        cell_type_embedding = cell_type_embedding.unsqueeze(0).expand(
-            z_proj.size(0), -1, -1
-        )
+        cell_type_embedding = cell_type_embedding.unsqueeze(0).expand(z_proj.size(0), -1, -1)
         z_proj = z_proj.unsqueeze(1)
 
         # Build the sequence of [latent,cell type embeddings]
