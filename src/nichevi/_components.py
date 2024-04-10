@@ -237,7 +237,7 @@ class NicheDecoder(nn.Module):
             p_m = p_m.view(p_m.shape[0], self.n_niche_components, self.n_output)
             p_v = p_v.view(p_v.shape[0], self.n_niche_components, self.n_output)
 
-        if p.ndim == 3:
+        elif p.ndim == 3:
             p_m = p_m.view(-1, p_m.shape[1], self.n_niche_components, self.n_output)
             p_v = p_v.view(-1, p_v.shape[1], self.n_niche_components, self.n_output)
 
@@ -323,20 +323,28 @@ class NicheDecoderAttention(nn.Module):
 
     def forward(self, z: torch.Tensor, *cat_list: int, eps: float = 1e-6) -> Tuple[torch.Tensor, torch.Tensor]:
         # Project the input
+
         z_proj = self.z_proj(z, *cat_list)
         z_proj = self.z_proj_linear(z_proj)
+
+        # if z.ndim == 3:
+        # z_proj = z_proj.view(z.size(0) * z.size(1), z.size(2))
 
         # Embed all the cell types
         cell_type_embedding = self.layer_norm_cell_type_embedding(
             self.cell_type_embedding.weight
         )  # TODO test without layer norm also
 
-        # cell_type_embeddings = self.cell_type_embedding.weight
-        cell_type_embedding = cell_type_embedding.unsqueeze(0).expand(z_proj.size(0), -1, -1)
-        z_proj = z_proj.unsqueeze(1)
-
         # Build the sequence of [latent,cell type embeddings]
-        qkv = torch.cat([z_proj, cell_type_embedding], dim=1)
+        if z.ndim == 2:
+            z_proj = z_proj.unsqueeze(1)
+            cell_type_embedding = cell_type_embedding.expand(z_proj.size(0), -1, -1)
+            qkv = torch.cat([z_proj, cell_type_embedding], dim=1)
+        elif z.ndim == 3:
+            z_proj = z_proj.unsqueeze(2)
+            cell_type_embedding = cell_type_embedding.expand(z_proj.size(0), z_proj.size(1), -1, -1)
+            qkv = torch.cat([z_proj, cell_type_embedding], dim=2)
+            qkv = qkv.view(-1, qkv.size(2), qkv.size(3))
 
         # Apply the attention mechanism
         attention_output, attention_weights = self.attention_module(qkv, qkv, qkv)
@@ -344,13 +352,11 @@ class NicheDecoderAttention(nn.Module):
         # Apply layer norm
         attention_output = self.layer_norm_attention_module(attention_output + qkv)
 
-        # cat_list = list(cat_list)
-        # cat_list[0] = cat_list[0][:, None, ...].expand(
-        #     attention_output.size(0), attention_output.size(1), 1
-        # )
+        if z.ndim == 3:
+            attention_output = attention_output.view(z_proj.size(0), z_proj.size(1), -1, z_proj.size(3))
 
         # Decode the attention output
-        decoded = self.decoder(attention_output, *cat_list)
+        decoded = self.decoder(attention_output)
 
         # Apply layer norm
         p = self.layer_norm_decoder(decoded + attention_output)
@@ -359,7 +365,9 @@ class NicheDecoderAttention(nn.Module):
         # p_m = self.mean_decoder(p[:, 1:, :])
         # p_v = torch.nn.Softplus()(self.var_decoder(p[:, 1:, :])) + eps
 
-        p_m, p_v = self.dist_decoder(p[:, 1:, :]).chunk(2, dim=-1)
+        p_ct = p[:, 1:, :] if z.ndim == 2 else p[:, :, 1:, :]
+
+        p_m, p_v = self.dist_decoder(p_ct).chunk(2, dim=-1)
         p_v = torch.nn.Softplus()(p_v) + eps
 
         return p_m, p_v, attention_weights
