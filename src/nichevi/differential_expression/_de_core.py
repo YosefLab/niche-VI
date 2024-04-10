@@ -87,6 +87,10 @@ def _de_core(
                 "group1_group2": [cell_idx1, cell_idx2],
                 "group1_niche1": [cell_idx1, neighbors_idx1],
             }
+            DE_group_names = {
+                "group1_group2": [g1, "Rest"],
+                "group1_niche1": [g1, f"{g1}_neighbors"],
+            }
         else:
             cell_idx2 = (adata.obs[groupby] == group2).to_numpy().ravel()
             neighbors_idx2 = _get_nonzero_indices_from_rows(A, cell_idx2)
@@ -94,6 +98,11 @@ def _de_core(
                 "group1_group2": [cell_idx1, cell_idx2],
                 "group1_niche1": [cell_idx1, neighbors_idx1],
                 "group2_niche2": [cell_idx2, neighbors_idx2],
+            }
+            DE_group_names = {
+                "group1_group2": [g1, group2],
+                "group1_niche1": [g1, f"{g1}_neighbors"],
+                "group2_niche2": [group2, f"{group2}_neighbors"],
             }
 
         for comparison, [cell_idx1, cell_idx2] in DE_indices.items():
@@ -120,10 +129,12 @@ def _de_core(
             if mode == "change":
                 res[f"is_de_fdr_{fdr}"] = _fdr_de_prediction(res["proba_de"], fdr=fdr)
             if idx1 is None:
-                g2 = "Rest" if group2 is None else group2
-                res["comparison"] = f"{g1} vs {g2}"
-                res["group1"] = g1
-                res["group2"] = g2
+                # g2 = "Rest" if group2 is None else group2
+                g1_name = DE_group_names[comparison][0]
+                g2_name = DE_group_names[comparison][1]
+                res["comparison"] = f"{g1_name} vs {g2_name}"
+                res["group1"] = g1_name
+                res["group2"] = g2_name
             DE_results[comparison].append(res)
 
     if temp_key is not None:
