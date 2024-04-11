@@ -38,9 +38,6 @@ class Encoder(nn.Module):
     var_eps
         Minimum value for the variance;
         used for numerical stability
-    var_activation
-        Callable used to ensure positivity of the variance.
-        Defaults to :meth:`torch.exp`.
     return_dist
         Return directly the distribution of z instead of its parameters.
     **kwargs
@@ -57,7 +54,6 @@ class Encoder(nn.Module):
         dropout_rate: float = 0.1,
         distribution: str = "normal",
         var_eps: float = 1e-4,
-        var_activation: Optional[Callable] = None,
         return_dist: bool = False,
         **kwargs,
     ):
@@ -74,8 +70,6 @@ class Encoder(nn.Module):
             dropout_rate=dropout_rate,
             **kwargs,
         )
-        # self.mean_encoder = nn.Linear(n_hidden, n_output)
-        # self.var_encoder = nn.Linear(n_hidden, n_output)
 
         self.dist_encoder = nn.Linear(n_hidden, 2 * n_output)
 
@@ -85,7 +79,6 @@ class Encoder(nn.Module):
             self.z_transformation = nn.Softmax(dim=-1)
         else:
             self.z_transformation = _identity
-        self.var_activation = torch.exp if var_activation is None else var_activation
 
     def forward(self, x: torch.Tensor, *cat_list: int):
         r"""The forward computation for a single sample.
@@ -113,9 +106,6 @@ class Encoder(nn.Module):
         q_m, q_v = self.dist_encoder(q).chunk(2, dim=-1)
         q_v = torch.nn.Softplus()(q_v) + self.var_eps
 
-        # q_m = self.mean_encoder(q)
-        # q_v = self.var_activation(self.var_encoder(q)) + self.var_eps
-
         dist = Normal(q_m, q_v.sqrt())
         latent = self.z_transformation(dist.rsample())
         if self.return_dist:
@@ -132,6 +122,7 @@ class DirichletDecoder(Decoder):
         n_cat_list: Iterable[int] = None,
         n_layers: int = 1,
         n_hidden: int = 128,
+        concentration_eps: float = 1e-6,
         **kwargs,
     ):
         super().__init__(
@@ -143,11 +134,13 @@ class DirichletDecoder(Decoder):
             **kwargs,
         )
 
-    def forward(self, x: torch.Tensor, *cat_list: int, eps: float = 1e-6):
+        self.concentration_eps = concentration_eps
+
+    def forward(self, x: torch.Tensor, *cat_list: int):
         p = self.decoder(x, *cat_list)
         p_m = self.mean_decoder(p)
 
-        p_m = torch.nn.Softplus()(p_m) + eps
+        p_m = torch.nn.Softplus()(p_m) + self.concentration_eps
 
         dist = Dirichlet(p_m)
 
@@ -189,12 +182,15 @@ class NicheDecoder(nn.Module):
         n_cat_list: Iterable[int] = None,
         n_layers: int = 1,
         n_hidden: int = 128,
+        dropout_rate: float = 0.1,
+        var_eps: float = 1e-4,
         **kwargs,
     ):
         super().__init__()
 
         self.n_niche_components = n_niche_components
         self.n_output = n_output
+        self.var_eps = var_eps
 
         self.decoder = FCLayers(
             n_in=n_input,
@@ -202,7 +198,7 @@ class NicheDecoder(nn.Module):
             n_cat_list=n_cat_list,
             n_layers=n_layers,
             n_hidden=n_hidden,
-            dropout_rate=0,  # why ?
+            dropout_rate=dropout_rate,
             **kwargs,
         )
 
@@ -231,7 +227,7 @@ class NicheDecoder(nn.Module):
         # Parameters for latent distribution
         p = self.decoder(x, *cat_list)
         p_m = self.mean_decoder(p)
-        p_v = torch.nn.Softplus()(self.var_decoder(p))  # changed exp to softplus todo add eps to p_v
+        p_v = torch.nn.Softplus()(self.var_decoder(p)) + self.var_eps
 
         if p.ndim == 2:
             p_m = p_m.view(p_m.shape[0], self.n_niche_components, self.n_output)
@@ -250,7 +246,7 @@ class NicheDecoderAttention(nn.Module):
         n_input: int,
         n_output: int,
         n_niche_components: int,
-        n_input_attention: int,  # Size of the attention layer, should be equal to n_input as we add the attention to the input
+        n_input_attention: int,
         n_heads: int = 1,
         n_cat_list: Iterable[int] = None,
         n_layers_proj: int = 1,
@@ -258,12 +254,14 @@ class NicheDecoderAttention(nn.Module):
         n_layers: int = 1,
         n_hidden: int = 128,
         dropout_rate: float = 0.1,
+        var_eps=1e-4,
         **kwargs,
     ):
         super().__init__()
 
         # standard scvi decoder > z_ = MLP(z | batch)
         # batch token?
+        self.var_eps = var_eps
 
         # Input z | batch
         self.z_proj = FCLayers(
@@ -302,7 +300,6 @@ class NicheDecoderAttention(nn.Module):
 
         self.decoder = FCLayers(
             n_in=n_input_attention,
-            # n_cat_list=n_cat_list,
             n_cat_list=None,
             n_out=n_input_attention,
             n_layers=n_layers,
@@ -316,19 +313,13 @@ class NicheDecoderAttention(nn.Module):
 
         self.layer_norm_decoder = nn.LayerNorm(n_input_attention)
 
-        # self.mean_decoder = nn.Linear(n_input_attention, n_output)
-        # self.var_decoder = nn.Linear(n_input_attention, n_output)
-
         self.dist_decoder = nn.Linear(n_input_attention, 2 * n_output)
 
-    def forward(self, z: torch.Tensor, *cat_list: int, eps: float = 1e-6) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, z: torch.Tensor, *cat_list: int) -> Tuple[torch.Tensor, torch.Tensor]:
         # Project the input
 
         z_proj = self.z_proj(z, *cat_list)
         z_proj = self.z_proj_linear(z_proj)
-
-        # if z.ndim == 3:
-        # z_proj = z_proj.view(z.size(0) * z.size(1), z.size(2))
 
         # Embed all the cell types
         cell_type_embedding = self.layer_norm_cell_type_embedding(
@@ -361,13 +352,9 @@ class NicheDecoderAttention(nn.Module):
         # Apply layer norm
         p = self.layer_norm_decoder(decoded + attention_output)
 
-        # Decode the mean and variance
-        # p_m = self.mean_decoder(p[:, 1:, :])
-        # p_v = torch.nn.Softplus()(self.var_decoder(p[:, 1:, :])) + eps
-
         p_ct = p[:, 1:, :] if z.ndim == 2 else p[:, :, 1:, :]
 
         p_m, p_v = self.dist_decoder(p_ct).chunk(2, dim=-1)
-        p_v = torch.nn.Softplus()(p_v) + eps
+        p_v = torch.nn.Softplus()(p_v) + self.var_eps
 
         return p_m, p_v, attention_weights

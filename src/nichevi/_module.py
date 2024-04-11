@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import logging
-import warnings
-from typing import Callable, Literal
+from typing import Literal
 
 import numpy as np
 import torch
-from scvi import REGISTRY_KEYS, settings
+from scvi import REGISTRY_KEYS
+from scvi.module import VAE
 from scvi.module._constants import MODULE_KEYS
 from scvi.module.base import (
-    BaseMinifiedModeModuleClass,
-    EmbeddingModuleMixin,
+    # BaseMinifiedModeModuleClass,
+    # EmbeddingModuleMixin,
     LossOutput,
     auto_move_data,
 )
