@@ -140,8 +140,11 @@ def _de_core(
     if temp_key is not None:
         del adata.obs[temp_key]
 
-    for key, value in DE_results.items():
-        DE_results[key] = pd.concat(value, axis=0)
-    # result = pd.concat(df_results, axis=0)
+    DE_results["group1_group2"] = pd.concat(DE_results["group1_group2"], axis=0)
+    idx_g1_g2 = DE_results["group1_group2"].index
+
+    for groups in list(DE_results.keys())[1:]:
+        group_DE_result = DE_results[groups]
+        DE_results[groups] = pd.concat(group_DE_result, axis=0).reindex(idx_g1_g2)
 
     return DE_results
