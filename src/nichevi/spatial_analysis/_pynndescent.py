@@ -2,6 +2,8 @@ import numpy as np
 from pynndescent import NNDescent
 from scipy.sparse import csr_matrix
 
+# Code slightly adapted from scib-metrics package by A.Gayoso (https://github.com/YosefLab/scib-metrics/blob/main/src/scib_metrics/nearest_neighbors/_pynndescent.py)
+
 
 def pynndescent(
     X: np.ndarray,

@@ -16,12 +16,13 @@ from scib_metrics.benchmark import BatchCorrection, Benchmarker, BioConservation
 from scipy.sparse import csr_matrix
 from scipy.spatial.distance import cdist
 from scipy.stats import entropy, mannwhitneyu, pearsonr, spearmanr
-from nichevi.nearest_neighbors import pynndescent
 from sklearn.metrics import (
     roc_auc_score,
 )
 from sklearn.neighbors import NearestNeighbors
 from tqdm import tqdm
+
+from ._pynndescent import pynndescent
 
 
 def get_values_row(indices, indptr, i):
