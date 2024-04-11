@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
+import warnings
+from typing import Callable, Literal
 
 import numpy as np
 import torch
-from scvi import REGISTRY_KEYS
-from scvi.module import VAE
+from scvi import REGISTRY_KEYS, settings
 from scvi.module._constants import MODULE_KEYS
 from scvi.module.base import (
-    # BaseMinifiedModeModuleClass,
-    # EmbeddingModuleMixin,
+    BaseMinifiedModeModuleClass,
+    EmbeddingModuleMixin,
     LossOutput,
     auto_move_data,
 )
@@ -23,7 +23,7 @@ from ._constants import NICHEVI_MODULE_KEYS, NICHEVI_REGISTRY_KEYS
 logger = logging.getLogger(__name__)
 
 
-class nicheVAE(VAE):
+class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
     """Variational auto-encoder :cite:p:`Lopez18`.
 
     Parameters
@@ -122,6 +122,11 @@ class nicheVAE(VAE):
         :class:`~numpy.ndarray` of shape ``(1, n_batch)`` of variances of the log library sizes
         that parameterize the prior on library size if ``use_size_factor_key`` is ``False`` and
         ``use_observed_lib_size`` is ``False``.
+    var_activation
+        Callable used to ensure positivity of the variance of the variational distribution. Passed
+        into :class:`~scvi.nn.Encoder`. Defaults to :func:`~torch.exp`.
+    extra_encoder_kwargs
+        Additional keyword arguments passed into :class:`~scvi.nn.Encoder`.
     extra_decoder_kwargs
         Additional keyword arguments passed into :class:`~scvi.nn.DecoderSCVI`.
     batch_embedding_kwargs
@@ -176,39 +181,26 @@ class nicheVAE(VAE):
         use_observed_lib_size: bool = True,
         library_log_means: np.ndarray | None = None,
         library_log_vars: np.ndarray | None = None,
-        batch_embedding_kwargs: dict | None = None,
-        extra_decoder_kwargs: dict | None = None,
+        var_activation: Callable[[torch.Tensor], torch.Tensor] = None,
         extra_encoder_kwargs: dict | None = None,
-        **vae_kwargs,
+        extra_decoder_kwargs: dict | None = None,
+        batch_embedding_kwargs: dict | None = None,
     ):
-        super().__init__(
-            n_input=n_input,
-            n_batch=n_batch,
-            n_labels=n_labels,
-            n_hidden=n_hidden,
-            n_latent=n_latent,
-            n_layers=n_layers,
-            n_continuous_cov=n_continuous_cov,
-            n_cats_per_cov=n_cats_per_cov,
-            dropout_rate=dropout_rate,
-            dispersion=dispersion,
-            log_variational=log_variational,
-            gene_likelihood=gene_likelihood,
-            latent_distribution=latent_distribution,
-            encode_covariates=encode_covariates,
-            deeply_inject_covariates=deeply_inject_covariates,
-            batch_representation=batch_representation,
-            use_size_factor_key=use_size_factor_key,
-            use_observed_lib_size=use_observed_lib_size,
-            library_log_means=library_log_means,
-            library_log_vars=library_log_vars,
-            extra_decoder_kwargs=extra_decoder_kwargs,
-            batch_embedding_kwargs=batch_embedding_kwargs,
-            extra_encoder_kwargs=extra_encoder_kwargs,
-            use_batch_norm=use_batch_norm,
-            use_layer_norm=use_layer_norm,
-            **vae_kwargs,
-        )
+        # from scvi.nn import DecoderSCVI, Encoder
+        from scvi.nn import DecoderSCVI
+
+        super().__init__()
+
+        self.dispersion = dispersion
+        self.n_latent = n_latent
+        self.log_variational = log_variational
+        self.gene_likelihood = gene_likelihood
+        self.n_batch = n_batch
+        self.n_labels = n_labels
+        self.latent_distribution = latent_distribution
+        self.encode_covariates = encode_covariates
+        self.use_size_factor_key = use_size_factor_key
+        self.use_observed_lib_size = use_size_factor_key or use_observed_lib_size
 
         self.latent_kl_weight = latent_kl_weight
         self.cell_rec_weight = cell_rec_weight
@@ -220,6 +212,26 @@ class nicheVAE(VAE):
         self.n_output_niche = n_output_niche
         self.niche_likelihood = niche_likelihood
         self.n_heads = n_heads
+
+        if not self.use_observed_lib_size:
+            if library_log_means is None or library_log_vars is None:
+                raise ValueError(
+                    "If not using observed_lib_size, " "must provide library_log_means and library_log_vars."
+                )
+
+            self.register_buffer("library_log_means", torch.from_numpy(library_log_means).float())
+            self.register_buffer("library_log_vars", torch.from_numpy(library_log_vars).float())
+
+        if self.dispersion == "gene":
+            self.px_r = torch.nn.Parameter(torch.randn(n_input))
+        elif self.dispersion == "gene-batch":
+            self.px_r = torch.nn.Parameter(torch.randn(n_input, n_batch))
+        elif self.dispersion == "gene-label":
+            self.px_r = torch.nn.Parameter(torch.randn(n_input, n_labels))
+        elif self.dispersion == "gene-cell":
+            pass
+        else:
+            raise ValueError("`dispersion` must be one of 'gene', 'gene-batch', 'gene-label', 'gene-cell'.")
 
         self.batch_representation = batch_representation
         if self.batch_representation == "embedding":
@@ -253,15 +265,42 @@ class nicheVAE(VAE):
             inject_covariates=deeply_inject_covariates,
             use_batch_norm=use_batch_norm_encoder,
             use_layer_norm=use_layer_norm_encoder,
+            var_activation=var_activation,
             return_dist=True,
             **_extra_encoder_kwargs,
         )
-
+        # l encoder goes from n_input-dimensional data to 1-d library size
+        self.l_encoder = Encoder(
+            n_input_encoder,
+            1,
+            n_layers=1,
+            n_cat_list=encoder_cat_list,
+            n_hidden=n_hidden,
+            dropout_rate=dropout_rate,
+            inject_covariates=deeply_inject_covariates,
+            use_batch_norm=use_batch_norm_encoder,
+            use_layer_norm=use_layer_norm_encoder,
+            var_activation=var_activation,
+            return_dist=True,
+            **_extra_encoder_kwargs,
+        )
         n_input_decoder = n_latent + n_continuous_cov
         if self.batch_representation == "embedding":
             n_input_decoder += batch_dim
 
         _extra_decoder_kwargs = extra_decoder_kwargs or {}
+        self.decoder = DecoderSCVI(
+            n_input_decoder,
+            n_input,
+            n_cat_list=cat_list,
+            n_layers=n_layers,
+            n_hidden=n_hidden,
+            inject_covariates=deeply_inject_covariates,
+            use_batch_norm=use_batch_norm_decoder,
+            use_layer_norm=use_layer_norm_decoder,
+            scale_activation="softplus" if use_size_factor_key else "softmax",
+            **_extra_decoder_kwargs,
+        )
 
         if n_heads is not None:
             self.niche_decoder = NicheDecoderAttention(
@@ -290,7 +329,6 @@ class nicheVAE(VAE):
                 inject_covariates=deeply_inject_covariates,
                 use_batch_norm=use_batch_norm_decoder,
                 use_layer_norm=use_layer_norm_decoder,
-                dropout_rate=dropout_rate,
                 **_extra_decoder_kwargs,
             )
 
@@ -305,6 +343,152 @@ class nicheVAE(VAE):
             use_layer_norm=use_layer_norm_decoder,
             **_extra_decoder_kwargs,
         )
+
+    def _get_inference_input(
+        self,
+        tensors: dict[str, torch.Tensor | None],
+    ) -> dict[str, torch.Tensor | None]:
+        """Get input tensors for the inference process."""
+        from scvi.data._constants import ADATA_MINIFY_TYPE
+
+        if self.minified_data_type is None:
+            return {
+                MODULE_KEYS.X_KEY: tensors[REGISTRY_KEYS.X_KEY],
+                MODULE_KEYS.BATCH_INDEX_KEY: tensors[REGISTRY_KEYS.BATCH_KEY],
+                MODULE_KEYS.CONT_COVS_KEY: tensors.get(REGISTRY_KEYS.CONT_COVS_KEY, None),
+                MODULE_KEYS.CAT_COVS_KEY: tensors.get(REGISTRY_KEYS.CAT_COVS_KEY, None),
+            }
+        elif self.minified_data_type == ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
+            return {
+                MODULE_KEYS.QZM_KEY: tensors[REGISTRY_KEYS.LATENT_QZM_KEY],
+                MODULE_KEYS.QZV_KEY: tensors[REGISTRY_KEYS.LATENT_QZV_KEY],
+                REGISTRY_KEYS.OBSERVED_LIB_SIZE: tensors[REGISTRY_KEYS.OBSERVED_LIB_SIZE],
+            }
+        else:
+            raise NotImplementedError(f"Unknown minified-data type: {self.minified_data_type}")
+
+    def _get_generative_input(
+        self,
+        tensors: dict[str, torch.Tensor],
+        inference_outputs: dict[str, torch.Tensor | Distribution | None],
+    ) -> dict[str, torch.Tensor | None]:
+        """Get input tensors for the generative process."""
+        size_factor = tensors.get(REGISTRY_KEYS.SIZE_FACTOR_KEY, None)
+        if size_factor is not None:
+            size_factor = torch.log(size_factor)
+
+        return {
+            MODULE_KEYS.Z_KEY: inference_outputs[MODULE_KEYS.Z_KEY],
+            MODULE_KEYS.LIBRARY_KEY: inference_outputs[MODULE_KEYS.LIBRARY_KEY],
+            MODULE_KEYS.BATCH_INDEX_KEY: tensors[REGISTRY_KEYS.BATCH_KEY],
+            MODULE_KEYS.Y_KEY: tensors[REGISTRY_KEYS.LABELS_KEY],
+            MODULE_KEYS.CONT_COVS_KEY: tensors.get(REGISTRY_KEYS.CONT_COVS_KEY, None),
+            MODULE_KEYS.CAT_COVS_KEY: tensors.get(REGISTRY_KEYS.CAT_COVS_KEY, None),
+            MODULE_KEYS.SIZE_FACTOR_KEY: size_factor,
+        }
+
+    def _compute_local_library_params(
+        self,
+        batch_index: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Computes local library parameters.
+
+        Compute two tensors of shape (batch_index.shape[0], 1) where each
+        element corresponds to the mean and variances, respectively, of the
+        log library sizes in the batch the cell corresponds to.
+        """
+        from torch.nn.functional import linear
+
+        n_batch = self.library_log_means.shape[1]
+        local_library_log_means = linear(one_hot(batch_index, n_batch), self.library_log_means)
+        local_library_log_vars = linear(one_hot(batch_index, n_batch), self.library_log_vars)
+        return local_library_log_means, local_library_log_vars
+
+    @auto_move_data
+    def _regular_inference(
+        self,
+        x: torch.Tensor,
+        batch_index: torch.Tensor,
+        cont_covs: torch.Tensor | None = None,
+        cat_covs: torch.Tensor | None = None,
+        n_samples: int = 1,
+    ) -> dict[str, torch.Tensor | Distribution | None]:
+        """Run the regular inference process."""
+        x_ = x
+        if self.use_observed_lib_size:
+            library = torch.log(x.sum(1)).unsqueeze(1)
+        if self.log_variational:
+            x_ = torch.log1p(x_)
+
+        if cont_covs is not None and self.encode_covariates:
+            encoder_input = torch.cat((x_, cont_covs), dim=-1)
+        else:
+            encoder_input = x_
+        if cat_covs is not None and self.encode_covariates:
+            categorical_input = torch.split(cat_covs, 1, dim=1)
+        else:
+            categorical_input = ()
+
+        if self.batch_representation == "embedding" and self.encode_covariates:
+            batch_rep = self.compute_embedding(REGISTRY_KEYS.BATCH_KEY, batch_index)
+            encoder_input = torch.cat([encoder_input, batch_rep], dim=-1)
+            qz, z = self.z_encoder(encoder_input, *categorical_input)
+        else:
+            qz, z = self.z_encoder(encoder_input, batch_index, *categorical_input)
+
+        ql = None
+        if not self.use_observed_lib_size:
+            if self.batch_representation == "embedding":
+                ql, library_encoded = self.l_encoder(encoder_input, *categorical_input)
+            else:
+                ql, library_encoded = self.l_encoder(encoder_input, batch_index, *categorical_input)
+            library = library_encoded
+
+        if n_samples > 1:
+            untran_z = qz.sample((n_samples,))
+            z = self.z_encoder.z_transformation(untran_z)
+            if self.use_observed_lib_size:
+                library = library.unsqueeze(0).expand((n_samples, library.size(0), library.size(1)))
+            else:
+                library = ql.sample((n_samples,))
+
+        return {
+            MODULE_KEYS.Z_KEY: z,
+            MODULE_KEYS.QZ_KEY: qz,
+            MODULE_KEYS.QL_KEY: ql,
+            MODULE_KEYS.LIBRARY_KEY: library,
+        }
+
+    @auto_move_data
+    def _cached_inference(
+        self,
+        qzm: torch.Tensor,
+        qzv: torch.Tensor,
+        observed_lib_size: torch.Tensor,
+        n_samples: int = 1,
+    ) -> dict[str, torch.Tensor | None]:
+        """Run the cached inference process."""
+        from scvi.data._constants import ADATA_MINIFY_TYPE
+        from torch.distributions import Normal
+
+        if self.minified_data_type != ADATA_MINIFY_TYPE.LATENT_POSTERIOR:
+            raise NotImplementedError(f"Unknown minified-data type: {self.minified_data_type}")
+
+        dist = Normal(qzm, qzv.sqrt())
+        # use dist.sample() rather than rsample because we aren't optimizing the z here
+        untran_z = dist.sample() if n_samples == 1 else dist.sample((n_samples,))
+        z = self.z_encoder.z_transformation(untran_z)
+        library = torch.log(observed_lib_size)
+        if n_samples > 1:
+            library = library.unsqueeze(0).expand((n_samples, library.size(0), library.size(1)))
+
+        return {
+            MODULE_KEYS.Z_KEY: z,
+            MODULE_KEYS.QZM_KEY: qzm,
+            MODULE_KEYS.QZV_KEY: qzv,
+            MODULE_KEYS.QL_KEY: None,
+            MODULE_KEYS.LIBRARY_KEY: library,
+        }
 
     @auto_move_data
     def generative(
@@ -419,7 +603,8 @@ class nicheVAE(VAE):
             niche_expression = torch.distributions.Poisson(niche_variance)
 
         else:
-            niche_expression = Normal(niche_mean, niche_variance.sqrt())
+            # niche_expression = Normal(niche_mean, niche_variance.sqrt())
+            niche_expression = Normal(niche_mean, niche_variance)
 
         return {
             MODULE_KEYS.PX_KEY: px,
@@ -508,3 +693,124 @@ class nicheVAE(VAE):
                 NICHEVI_MODULE_KEYS.SPATIAL_WEIGHT_KEY: spatial_weight,
             },
         )
+
+    @torch.inference_mode()
+    def sample(
+        self,
+        tensors: dict[str, torch.Tensor],
+        n_samples: int = 1,
+        max_poisson_rate: float = 1e8,
+    ) -> torch.Tensor:
+        r"""Generate predictive samples from the posterior predictive distribution.
+
+        The posterior predictive distribution is denoted as :math:`p(\hat{x} \mid x)`, where
+        :math:`x` is the input data and :math:`\hat{x}` is the sampled data.
+
+        We sample from this distribution by first sampling ``n_samples`` times from the posterior
+        distribution :math:`q(z \mid x)` for a given observation, and then sampling from the
+        likelihood :math:`p(\hat{x} \mid z)` for each of these.
+
+        Parameters
+        ----------
+        tensors
+            Dictionary of tensors passed into :meth:`~scvi.module.VAE.forward`.
+        n_samples
+            Number of Monte Carlo samples to draw from the distribution for each observation.
+        max_poisson_rate
+            The maximum value to which to clip the ``rate`` parameter of
+            :class:`~scvi.distributions.Poisson`. Avoids numerical sampling issues when the
+            parameter is very large due to the variance of the distribution.
+
+        Returns
+        -------
+        Tensor on CPU with shape ``(n_obs, n_vars)`` if ``n_samples == 1``, else
+        ``(n_obs, n_vars,)``.
+        """
+        from scvi.distributions import Poisson
+
+        inference_kwargs = {"n_samples": n_samples}
+        _, generative_outputs = self.forward(tensors, inference_kwargs=inference_kwargs, compute_loss=False)
+
+        dist = generative_outputs[MODULE_KEYS.PX_KEY]
+        if self.gene_likelihood == "poisson":
+            dist = Poisson(torch.clamp(dist.rate, max=max_poisson_rate))
+
+        # (n_obs, n_vars) if n_samples == 1, else (n_samples, n_obs, n_vars)
+        samples = dist.sample()
+        # (n_samples, n_obs, n_vars) -> (n_obs, n_vars, n_samples)
+        samples = torch.permute(samples, (1, 2, 0)) if n_samples > 1 else samples
+
+        return samples.cpu()
+
+    @torch.inference_mode()
+    @auto_move_data
+    def marginal_ll(
+        self,
+        tensors: dict[str, torch.Tensor],
+        n_mc_samples: int,
+        return_mean: bool = False,
+        n_mc_samples_per_pass: int = 1,
+    ):
+        """Compute the marginal log-likelihood of the data under the model.
+
+        Parameters
+        ----------
+        tensors
+            Dictionary of tensors passed into :meth:`~scvi.module.VAE.forward`.
+        n_mc_samples
+            Number of Monte Carlo samples to use for the estimation of the marginal log-likelihood.
+        return_mean
+            Whether to return the mean of marginal likelihoods over cells.
+        n_mc_samples_per_pass
+            Number of Monte Carlo samples to use per pass. This is useful to avoid memory issues.
+        """
+        from torch import logsumexp
+        from torch.distributions import Normal
+
+        batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
+
+        to_sum = []
+        if n_mc_samples_per_pass > n_mc_samples:
+            warnings.warn(
+                "Number of chunks is larger than the total number of samples, setting it to the " "number of samples",
+                RuntimeWarning,
+                stacklevel=settings.warnings_stacklevel,
+            )
+            n_mc_samples_per_pass = n_mc_samples
+        n_passes = int(np.ceil(n_mc_samples / n_mc_samples_per_pass))
+        for _ in range(n_passes):
+            # Distribution parameters and sampled variables
+            inference_outputs, _, losses = self.forward(tensors, inference_kwargs={"n_samples": n_mc_samples_per_pass})
+            qz = inference_outputs[MODULE_KEYS.QZ_KEY]
+            ql = inference_outputs[MODULE_KEYS.QL_KEY]
+            z = inference_outputs[MODULE_KEYS.Z_KEY]
+            library = inference_outputs[MODULE_KEYS.LIBRARY_KEY]
+
+            # Reconstruction Loss
+            reconst_loss = losses.dict_sum(losses.reconstruction_loss)
+
+            # Log-probabilities
+            p_z = Normal(torch.zeros_like(qz.loc), torch.ones_like(qz.scale)).log_prob(z).sum(dim=-1)
+            p_x_zl = -reconst_loss
+            q_z_x = qz.log_prob(z).sum(dim=-1)
+            log_prob_sum = p_z + p_x_zl - q_z_x
+
+            if not self.use_observed_lib_size:
+                (
+                    local_library_log_means,
+                    local_library_log_vars,
+                ) = self._compute_local_library_params(batch_index)
+
+                p_l = Normal(local_library_log_means, local_library_log_vars.sqrt()).log_prob(library).sum(dim=-1)
+                q_l_x = ql.log_prob(library).sum(dim=-1)
+
+                log_prob_sum += p_l - q_l_x
+
+            to_sum.append(log_prob_sum)
+        to_sum = torch.cat(to_sum, dim=0)
+        batch_log_lkl = logsumexp(to_sum, dim=0) - np.log(n_mc_samples)
+        if return_mean:
+            batch_log_lkl = torch.mean(batch_log_lkl).item()
+        else:
+            batch_log_lkl = batch_log_lkl.cpu()
+        return batch_log_lkl
