@@ -161,21 +161,15 @@ class nicheSCVI(
             )
         else:
             n_cats_per_cov = (
-                self.adata_manager.get_state_registry(
-                    REGISTRY_KEYS.CAT_COVS_KEY
-                ).n_cats_per_key
+                self.adata_manager.get_state_registry(REGISTRY_KEYS.CAT_COVS_KEY).n_cats_per_key
                 if REGISTRY_KEYS.CAT_COVS_KEY in self.adata_manager.data_registry
                 else None
             )
             n_batch = self.summary_stats.n_batch
-            use_size_factor_key = (
-                REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
-            )
+            use_size_factor_key = REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
             library_log_means, library_log_vars = None, None
             if not use_size_factor_key and self.minified_data_type is None:
-                library_log_means, library_log_vars = _init_library_size(
-                    self.adata_manager, n_batch
-                )
+                library_log_means, library_log_vars = _init_library_size(self.adata_manager, n_batch)
             self.module = self._module_cls(
                 n_input=self.summary_stats.n_vars,
                 n_output_niche=self.summary_stats.n_latent_mean,
@@ -302,18 +296,10 @@ class nicheSCVI(
             LayerField(REGISTRY_KEYS.X_KEY, layer, is_count_data=True),
             CategoricalObsField(REGISTRY_KEYS.BATCH_KEY, batch_key),
             CategoricalObsField(REGISTRY_KEYS.LABELS_KEY, labels_key),
-            NumericalObsField(
-                REGISTRY_KEYS.SIZE_FACTOR_KEY, size_factor_key, required=False
-            ),
-            CategoricalJointObsField(
-                REGISTRY_KEYS.CAT_COVS_KEY, categorical_covariate_keys
-            ),
-            NumericalJointObsField(
-                REGISTRY_KEYS.CONT_COVS_KEY, continuous_covariate_keys
-            ),
-            ObsmField(
-                NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY, niche_composition_key
-            ),
+            NumericalObsField(REGISTRY_KEYS.SIZE_FACTOR_KEY, size_factor_key, required=False),
+            CategoricalJointObsField(REGISTRY_KEYS.CAT_COVS_KEY, categorical_covariate_keys),
+            NumericalJointObsField(REGISTRY_KEYS.CONT_COVS_KEY, continuous_covariate_keys),
+            ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY, niche_composition_key),
             ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_INDEXES_KEY, niche_indexes_key),
             ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_DISTANCES_KEY, niche_distances_key),
             ObsmField(NICHEVI_REGISTRY_KEYS.Z1_MEAN_KEY, latent_mean_key),
@@ -323,9 +309,7 @@ class nicheSCVI(
         adata_minify_type = _get_adata_minify_type(adata)
         if adata_minify_type is not None:
             anndata_fields += cls._get_fields_for_adata_minification(adata_minify_type)
-        adata_manager = AnnDataManager(
-            fields=anndata_fields, setup_method_args=setup_method_args
-        )
+        adata_manager = AnnDataManager(fields=anndata_fields, setup_method_args=setup_method_args)
         adata_manager.register_fields(adata, **kwargs)
         cls.register_manager(adata_manager)
 
@@ -397,20 +381,14 @@ class nicheSCVI(
             raise NotImplementedError(f"Unknown MinifiedDataType: {minified_data_type}")
 
         if self.module.use_observed_lib_size is False:
-            raise ValueError(
-                "Cannot minify the data if `use_observed_lib_size` is False"
-            )
+            raise ValueError("Cannot minify the data if `use_observed_lib_size` is False")
 
         minified_adata = get_minified_adata_scrna(self.adata, minified_data_type)
         minified_adata.obsm[_SCVI_LATENT_QZM] = self.adata.obsm[use_latent_qzm_key]
         minified_adata.obsm[_SCVI_LATENT_QZV] = self.adata.obsm[use_latent_qzv_key]
         counts = self.adata_manager.get_from_registry(REGISTRY_KEYS.X_KEY)
-        minified_adata.obs[_SCVI_OBSERVED_LIB_SIZE] = np.squeeze(
-            np.asarray(counts.sum(axis=1))
-        )
-        self._update_adata_and_manager_post_minification(
-            minified_adata, minified_data_type
-        )
+        minified_adata.obs[_SCVI_OBSERVED_LIB_SIZE] = np.squeeze(np.asarray(counts.sum(axis=1)))
+        self._update_adata_and_manager_post_minification(minified_adata, minified_data_type)
         self.module.minified_data_type = minified_data_type
 
     @torch.inference_mode()
@@ -439,9 +417,7 @@ class nicheSCVI(
         self._check_if_trained(warn=False)
 
         adata = self._validate_anndata(adata)
-        scdl = self._make_data_loader(
-            adata=adata, indices=indices, batch_size=batch_size
-        )
+        scdl = self._make_data_loader(adata=adata, indices=indices, batch_size=batch_size)
 
         if self.module.attention_decoder is False:
             raise ValueError(
@@ -498,8 +474,7 @@ class nicheSCVI(
         attention_weights = attention_weights[:, 1:, 1:]
 
         token_attention_weights = {
-            token_name: attention_weights[:, token_idx, :]
-            for token_name, token_idx in cell_type_to_int.items()
+            token_name: attention_weights[:, token_idx, :] for token_name, token_idx in cell_type_to_int.items()
         }
 
         return token_attention_weights
@@ -517,9 +492,7 @@ def get_niche_indexes(
     # build a dictionnary giving the index of each 'donor_slice' observation:
     donor_slice_index = {}
     for sample in adata.obs[sample_key].unique():
-        donor_slice_index[sample] = adata.obs[adata.obs[sample_key] == sample][
-            "index"
-        ].values
+        donor_slice_index[sample] = adata.obs[adata.obs[sample_key] == sample]["index"].values
 
     for sample in adata.obs[sample_key].unique():
         sample_coord = adata.obsm[cell_coordinates_key][adata.obs[sample_key] == sample]
@@ -542,19 +515,13 @@ def get_niche_indexes(
         # Store the indices in the adata object
         sample_global_index = donor_slice_index[sample][indices].astype(int)
 
-        adata.obsm[niche_indexes_key][adata.obs[sample_key] == sample] = (
-            sample_global_index[:, 1:]
-        )
+        adata.obsm[niche_indexes_key][adata.obs[sample_key] == sample] = sample_global_index[:, 1:]
 
         adata.obsm[niche_indexes_key] = adata.obsm[niche_indexes_key].astype(int)
 
-        adata.obsm[niche_distances_key][adata.obs[sample_key] == sample] = distances[
-            :, 1:
-        ]
+        adata.obsm[niche_distances_key][adata.obs[sample_key] == sample] = distances[:, 1:]
 
-    print(
-        "[bold cyan]Saved niche_indexes and niche_distances in adata.obsm[/bold cyan]"
-    )
+    print("[bold cyan]Saved niche_indexes and niche_distances in adata.obsm[/bold cyan]")
 
     return None
 
@@ -575,9 +542,7 @@ def get_neighborhood_composition(
 
     n_cells = adata.n_obs
     # For each cell, get the cell types of its neighbors
-    cell_types_in_the_neighborhood = [
-        integer_vector[indices[cell, :]] for cell in range(n_cells)
-    ]
+    cell_types_in_the_neighborhood = [integer_vector[indices[cell, :]] for cell in range(n_cells)]
 
     # Compute the composition of each neighborhood
     composition = np.array(
@@ -646,9 +611,7 @@ def get_average_latent_per_celltype(
     # for each cell, take the average of the latent space for each label, namely the label-averaged latent_mean obsm
 
     if latent_mean_key is None:
-        adata.obsm["qz1_m_niche_ct"] = np.empty(
-            (adata.n_obs, adata.obsm[latent_mean_key].shape[1])
-        )
+        adata.obsm["qz1_m_niche_ct"] = np.empty((adata.n_obs, adata.obsm[latent_mean_key].shape[1]))
 
         return None
 
@@ -669,16 +632,12 @@ def get_average_latent_per_celltype(
     integer_vector = np.vectorize(cell_type_to_int.get)(adata.obs[labels_key])
 
     # For each cell, get the cell types of its neighbors (as integers)
-    cell_types_in_the_neighborhood = np.vstack(
-        [integer_vector[niche_indexes[cell, :]] for cell in range(n_cells)]
-    )
+    cell_types_in_the_neighborhood = np.vstack([integer_vector[niche_indexes[cell, :]] for cell in range(n_cells)])
 
     dict_of_cell_type_indices = {}
 
     for cell_type, cell_type_idx in cell_type_to_int.items():
-        ct_row_indices, ct_col_indices = np.where(
-            cell_types_in_the_neighborhood == cell_type_idx
-        )  # [1]
+        ct_row_indices, ct_col_indices = np.where(cell_types_in_the_neighborhood == cell_type_idx)  # [1]
 
         # dict of cells:local index of the cells of cell_type in the neighborhood.
         result_dict = {}
@@ -700,9 +659,7 @@ def get_average_latent_per_celltype(
         ct_dict = dict_of_cell_type_indices[cell_type]
         # inner loop over every cell that has this cell type in its neighborhood.
         for cell_idx, neighbor_idxs in ct_dict.items():
-            z1_mean_niches_ct[cell_idx, cell_type_idx, :] = np.mean(
-                z1_mean_niches[cell_idx, neighbor_idxs, :], axis=0
-            )
+            z1_mean_niches_ct[cell_idx, cell_type_idx, :] = np.mean(z1_mean_niches[cell_idx, neighbor_idxs, :], axis=0)
 
     adata.obsm[latent_mean_ct_key] = z1_mean_niches_ct
 
