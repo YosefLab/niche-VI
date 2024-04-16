@@ -442,9 +442,11 @@ class nicheSCVI(
         self._check_if_trained(warn=False)
 
         adata = self._validate_anndata(adata)
-        scdl = self._make_data_loader(adata=adata, indices=indices, batch_size=batch_size)
+        scdl = self._make_data_loader(
+            adata=adata, indices=indices, batch_size=batch_size
+        )
 
-        if self.module.attention_decoder is False:
+        if self.module.n_heads is None:
             raise ValueError(
                 "The model was not trained with the attention_decoder parameter set to True. "
                 "Please retrain the model with the attention_decoder parameter set to True."
@@ -477,7 +479,7 @@ class nicheSCVI(
         cell_type_key: str = "cell_type",
         compute_attention: bool = True,
     ):
-        if self.module.attention_decoder is False:
+        if self.module.n_heads is None:
             raise ValueError(
                 "The model was not trained with the attention_decoder parameter set to True. "
                 "Please retrain the model with the attention_decoder parameter set to True."

@@ -1,9 +1,6 @@
 import numpy as np
-import pandas as pd
 
 # import pytest
-import scvi
-import torch
 from scvi.data import _constants, synthetic_iid
 from scvi.data._compat import LEGACY_REGISTRY_KEY_MAP, registry_from_setup_dict
 from scvi.model.utils import mde
