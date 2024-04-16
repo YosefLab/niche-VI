@@ -1,9 +1,12 @@
 from collections.abc import Iterable as IterableClass
 
 import pandas as pd
+from scvi import REGISTRY_KEYS
 from scvi.model.base._differential import DifferentialComputation
 from scvi.model.base._utils import _fdr_de_prediction, _prepare_obs
 from scvi.utils import track
+
+from nichevi import NICHEVI_REGISTRY_KEYS
 
 from ._de_utils import _get_nonzero_indices_from_rows, adjusted_nearest_neighbors
 
@@ -28,10 +31,9 @@ def _de_core(
     fdr,
     silent,
     ###### NicheSCVI specific ######
-    compute_neighborhood_de: bool = False,
-    sample_key="sample",
-    cell_coordinates_key="spatial",
-    label_key="labels",
+    # sample_key="sample",
+    # cell_coordinates_key="spatial",
+    # label_key="labels",
     radius=100,
     k_nn=None,
     **kwargs,
@@ -54,11 +56,20 @@ def _de_core(
         adata.obs[temp_key] = obs_col
         groupby = temp_key
 
+    cell_samples = adata_manager.get_from_registry(
+            NICHEVI_REGISTRY_KEYS.SAMPLE_KEY
+        )
+    cell_labels = adata_manager.get_from_registry(REGISTRY_KEYS.LABELS_KEY)
+    cell_coordinates = adata_manager.get_from_registry(
+            NICHEVI_REGISTRY_KEYS.CELL_COORDINATES_KEY
+        )
+
+
     A = adjusted_nearest_neighbors(
         adata,
-        sample_key=sample_key,
-        cell_coordinates_key=cell_coordinates_key,
-        label_key=label_key,
+        cell_samples=cell_samples,
+        cell_coordinates=cell_coordinates,
+        cell_labels=cell_labels,
         radius=radius,
         k_nn=k_nn,
         return_sparse=True,

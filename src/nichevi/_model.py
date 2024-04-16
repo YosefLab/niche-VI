@@ -161,15 +161,21 @@ class nicheSCVI(
             )
         else:
             n_cats_per_cov = (
-                self.adata_manager.get_state_registry(REGISTRY_KEYS.CAT_COVS_KEY).n_cats_per_key
+                self.adata_manager.get_state_registry(
+                    REGISTRY_KEYS.CAT_COVS_KEY
+                ).n_cats_per_key
                 if REGISTRY_KEYS.CAT_COVS_KEY in self.adata_manager.data_registry
                 else None
             )
             n_batch = self.summary_stats.n_batch
-            use_size_factor_key = REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
+            use_size_factor_key = (
+                REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
+            )
             library_log_means, library_log_vars = None, None
             if not use_size_factor_key and self.minified_data_type is None:
-                library_log_means, library_log_vars = _init_library_size(self.adata_manager, n_batch)
+                library_log_means, library_log_vars = _init_library_size(
+                    self.adata_manager, n_batch
+                )
             self.module = self._module_cls(
                 n_input=self.summary_stats.n_vars,
                 n_output_niche=self.summary_stats.n_latent_mean,
@@ -195,15 +201,15 @@ class nicheSCVI(
 
     def preprocessing_anndata(
         adata: AnnData,
-        label_key: str,
-        sample_key: str,
-        cell_coordinates_key: str,
         k_nn: int,
-        latent_mean_key: str,
-        latent_mean_niche_key: str,
-        niche_composition_key: str,
-        niche_indexes_key: str,
-        niche_distances_key: str | None = None,
+        sample_key: str | None = None,
+        labels_key: str = "cell_type",
+        cell_coordinates_key: str = "spatial",
+        expression_embedding_key: str = "X_scVI",
+        expression_embedding_niche_key: str = "X_scVI_niche",
+        niche_composition_key: str = "niche_composition",
+        niche_indexes_key: str = "niche_indexes",
+        niche_distances_key: str = "niche_distances",
         ###########
         niche_type_key: str | None = None,
         niche_treshold: float | None = 0.2,
@@ -217,7 +223,7 @@ class nicheSCVI(
         adata.obsm[niche_distances_key] = np.zeros(
             (adata.n_obs, k_nn)
         )  # for each cell, store the distances to its k_nn neighbors
-        n_cell_types = len(adata.obs[label_key].unique())  # number of cell types
+        n_cell_types = len(adata.obs[labels_key].unique())  # number of cell types
         adata.obsm[niche_composition_key] = np.zeros(
             (adata.n_obs, n_cell_types)
         )  # for each cell, store the composition of its neighborhood as a convex vector of cell type proportions
@@ -233,7 +239,7 @@ class nicheSCVI(
 
         get_neighborhood_composition(
             adata=adata,
-            cell_type_column=label_key,
+            cell_type_column=labels_key,
             indices_key=niche_indexes_key,
             niche_composition_key=niche_composition_key,
         )
@@ -248,10 +254,10 @@ class nicheSCVI(
 
         get_average_latent_per_celltype(
             adata=adata,
-            labels_key=label_key,
+            labels_key=labels_key,
             niche_indexes_key=niche_indexes_key,
-            latent_mean_key=latent_mean_key,
-            latent_mean_ct_key=latent_mean_niche_key,
+            latent_mean_key=expression_embedding_key,
+            latent_mean_ct_key=expression_embedding_niche_key,
             log1p=log1p,
         )
 
@@ -262,21 +268,20 @@ class nicheSCVI(
     def setup_anndata(
         cls,
         adata: AnnData,
-        ############################
-        niche_composition_key: str,
-        niche_indexes_key: str,
-        niche_distances_key: str | None = None,
-        ############################
         layer: str | None = None,
         batch_key: str | None = None,
-        labels_key: str | None = None,
         size_factor_key: str | None = None,
         categorical_covariate_keys: list[str] | None = None,
         continuous_covariate_keys: list[str] | None = None,
         ############################
-        latent_mean_key: str | None = None,
-        latent_mean_ct_key: str | None = None,
-        ############################
+        sample_key: str | None = None,
+        labels_key: str = "cell_type",
+        cell_coordinates_key: str = "spatial",
+        expression_embedding_key: str = "X_scVI",
+        expression_embedding_niche_key: str = "X_scVI_niche",
+        niche_composition_key: str = "niche_composition",
+        niche_indexes_key: str = "niche_indexes",
+        niche_distances_key: str = "niche_distances",
         **kwargs,
     ):
         """%(summary)s.
@@ -296,20 +301,34 @@ class nicheSCVI(
             LayerField(REGISTRY_KEYS.X_KEY, layer, is_count_data=True),
             CategoricalObsField(REGISTRY_KEYS.BATCH_KEY, batch_key),
             CategoricalObsField(REGISTRY_KEYS.LABELS_KEY, labels_key),
-            NumericalObsField(REGISTRY_KEYS.SIZE_FACTOR_KEY, size_factor_key, required=False),
-            CategoricalJointObsField(REGISTRY_KEYS.CAT_COVS_KEY, categorical_covariate_keys),
-            NumericalJointObsField(REGISTRY_KEYS.CONT_COVS_KEY, continuous_covariate_keys),
-            ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY, niche_composition_key),
+            NumericalObsField(
+                REGISTRY_KEYS.SIZE_FACTOR_KEY, size_factor_key, required=False
+            ),
+            CategoricalJointObsField(
+                REGISTRY_KEYS.CAT_COVS_KEY, categorical_covariate_keys
+            ),
+            NumericalJointObsField(
+                REGISTRY_KEYS.CONT_COVS_KEY, continuous_covariate_keys
+            ),
+            CategoricalObsField(NICHEVI_REGISTRY_KEYS.SAMPLE_KEY, sample_key),
+            ObsmField(
+                NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY, niche_composition_key
+            ),
+            ObsmField(NICHEVI_REGISTRY_KEYS.CELL_COORDINATES_KEY, cell_coordinates_key),
             ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_INDEXES_KEY, niche_indexes_key),
             ObsmField(NICHEVI_REGISTRY_KEYS.NICHE_DISTANCES_KEY, niche_distances_key),
-            ObsmField(NICHEVI_REGISTRY_KEYS.Z1_MEAN_KEY, latent_mean_key),
-            ObsmField(NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY, latent_mean_ct_key),
+            ObsmField(NICHEVI_REGISTRY_KEYS.Z1_MEAN_KEY, expression_embedding_key),
+            ObsmField(
+                NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY, expression_embedding_niche_key
+            ),
         ]
         # register new fields if the adata is minified
         adata_minify_type = _get_adata_minify_type(adata)
         if adata_minify_type is not None:
             anndata_fields += cls._get_fields_for_adata_minification(adata_minify_type)
-        adata_manager = AnnDataManager(fields=anndata_fields, setup_method_args=setup_method_args)
+        adata_manager = AnnDataManager(
+            fields=anndata_fields, setup_method_args=setup_method_args
+        )
         adata_manager.register_fields(adata, **kwargs)
         cls.register_manager(adata_manager)
 
@@ -381,14 +400,20 @@ class nicheSCVI(
             raise NotImplementedError(f"Unknown MinifiedDataType: {minified_data_type}")
 
         if self.module.use_observed_lib_size is False:
-            raise ValueError("Cannot minify the data if `use_observed_lib_size` is False")
+            raise ValueError(
+                "Cannot minify the data if `use_observed_lib_size` is False"
+            )
 
         minified_adata = get_minified_adata_scrna(self.adata, minified_data_type)
         minified_adata.obsm[_SCVI_LATENT_QZM] = self.adata.obsm[use_latent_qzm_key]
         minified_adata.obsm[_SCVI_LATENT_QZV] = self.adata.obsm[use_latent_qzv_key]
         counts = self.adata_manager.get_from_registry(REGISTRY_KEYS.X_KEY)
-        minified_adata.obs[_SCVI_OBSERVED_LIB_SIZE] = np.squeeze(np.asarray(counts.sum(axis=1)))
-        self._update_adata_and_manager_post_minification(minified_adata, minified_data_type)
+        minified_adata.obs[_SCVI_OBSERVED_LIB_SIZE] = np.squeeze(
+            np.asarray(counts.sum(axis=1))
+        )
+        self._update_adata_and_manager_post_minification(
+            minified_adata, minified_data_type
+        )
         self.module.minified_data_type = minified_data_type
 
     @torch.inference_mode()

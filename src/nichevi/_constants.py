@@ -2,11 +2,13 @@ from typing import NamedTuple
 
 
 class _NICHEVI_REGISTRY_KEYS_NT(NamedTuple):
+    SAMPLE_KEY: str = "sample"
     Z1_MEAN_KEY: str = "latent_mean"
     NICHE_INDEXES_KEY: str = "niche_indexes"
     NICHE_DISTANCES_KEY: str = "niche_distances"
     NICHE_COMPOSITION_KEY: str = "niche_composition"
     Z1_MEAN_CT_KEY: str = "latent_mean_ct_key"
+    CELL_COORDINATES_KEY: str = "spatial"
 
 
 NICHEVI_REGISTRY_KEYS = _NICHEVI_REGISTRY_KEYS_NT()

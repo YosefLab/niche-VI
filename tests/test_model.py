@@ -81,32 +81,28 @@ def test_nichevi():
     adata.obsm["qz1_m"] = np.random.normal(size=(adata.shape[0], N_LATENT))
     adata.layers["counts"] = adata.X.copy()
 
+    setup_kwargs = {
+        "labels_key": "labels",
+        "cell_coordinates_key": "coordinates",
+        "expression_embedding_key": "qz1_m",
+        "expression_embedding_niche_key": "qz1_m_niche_ct",
+        "niche_composition_key": "neighborhood_composition",
+        "niche_indexes_key": "niche_indexes",
+        "niche_distances_key": "niche_distances",
+    }
+
     nicheSCVI.preprocessing_anndata(
         adata,
-        niche_composition_key="neighborhood_composition",
-        niche_indexes_key="niche_indexes",
-        niche_distances_key="niche_distances",
-        niche_type_key="niche_type",
-        niche_treshold=None,
-        cell_type_for_niches=None,
-        label_key="labels",
-        sample_key="batch",
-        cell_coordinates_key="coordinates",
         k_nn=K_NN,
-        latent_mean_key="qz1_m",
-        latent_mean_niche_key="qz1_m_niche_ct",
+        sample_key="batch",
+        **setup_kwargs,
     )
 
     nicheSCVI.setup_anndata(
         adata,
         layer="counts",
         batch_key="batch",
-        labels_key="labels",
-        niche_composition_key="neighborhood_composition",
-        niche_indexes_key="niche_indexes",
-        niche_distances_key="niche_distances",
-        latent_mean_key="qz1_m",
-        latent_mean_ct_key="qz1_m_niche_ct",
+        **setup_kwargs,
     )
 
     niche_setup = {
@@ -150,6 +146,7 @@ def test_nichevi():
         validation_size=0.2,
         early_stopping=True,
         check_val_every_n_epoch=1,
+        accelerator="cpu",
         # plan_kwargs={
         #     "lr": setup.LR,
         #     "n_epochs_kl_warmup": setup.KL_WARMUP,
@@ -174,10 +171,9 @@ def test_nichevi():
         groupby="labels",
         group1="label_1",
         batch_correction=False,
-        compute_neighborhood_de=True,
-        sample_key="batch",
-        cell_coordinates_key="coordinates",
-        label_key="labels",
+        # sample_key="batch",
+        # cell_coordinates_key="coordinates",
+        # label_key="labels",
         radius=50,
         k_nn=None,
     )
@@ -186,10 +182,9 @@ def test_nichevi():
         group1="label_1",
         group2="label_2",
         batch_correction=False,
-        compute_neighborhood_de=True,
-        sample_key="batch",
-        cell_coordinates_key="coordinates",
-        label_key="labels",
+        # sample_key="batch",
+        # cell_coordinates_key="coordinates",
+        # label_key="labels",
         radius=50,
         k_nn=None,
     )

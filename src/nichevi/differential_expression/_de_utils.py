@@ -81,9 +81,9 @@ def corrupt_counts(
 
 def adjusted_nearest_neighbors(
     adata: ad.AnnData,
-    sample_key: str,
-    cell_coordinates_key: str,
-    label_key: str,
+    cell_samples: np.array,
+    cell_coordinates: np.array,
+    cell_labels: np.array,
     radius: int | None = None,
     k_nn: int | None = None,
     return_sparse: bool = True,
@@ -91,17 +91,21 @@ def adjusted_nearest_neighbors(
     from scipy.sparse import block_diag
     from sklearn.neighbors import NearestNeighbors
 
-    cell_types = adata.obs[label_key]
+    # cell_types = adata.obs[labels].copy().values
+    # cell_coords = adata.obsm[cell_coordinates].copy()
+    # cell_samples = adata.obs[samples].copy().values
+
     adjacency_matrices = []
 
-    for sample in adata.obs[sample_key].unique():
-        sample_coord = adata.obsm[cell_coordinates_key][adata.obs[sample_key] == sample]
-        sample_cell_types = cell_types[adata.obs[sample_key] == sample]
+    for sample in np.unique(cell_samples):
+        mask = np.squeeze(cell_samples == sample, axis=1)
+        sample_coord = cell_coordinates[mask]
+        sample_cell_types = np.squeeze(cell_labels[mask], axis=1)
 
         # build a dict of masks for each cell type
         cell_type_masks = {
-            cell_type: (sample_cell_types != cell_type).values
-            for cell_type in sample_cell_types.unique()
+            cell_type: sample_cell_types != cell_type
+            for cell_type in np.unique(sample_cell_types)
         }
 
         # make it a df
