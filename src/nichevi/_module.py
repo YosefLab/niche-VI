@@ -166,6 +166,7 @@ class nicheVAE(VAE):
         compo_rec_weight: float = 1.0,
         ##############################
         n_heads: int | None = 2,
+        n_hidden_dist_decoder: int | None = None,
         ##############################
         encode_covariates: bool = False,
         deeply_inject_covariates: bool = True,
@@ -276,6 +277,7 @@ class nicheVAE(VAE):
                 n_layers=n_layers_niche,
                 n_hidden=n_hidden_niche,
                 dropout_rate=dropout_rate,
+                n_hidden_dist_decoder=n_hidden_dist_decoder,
                 **_extra_decoder_kwargs,
             )
 

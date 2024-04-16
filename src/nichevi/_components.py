@@ -255,6 +255,7 @@ class NicheDecoderAttention(nn.Module):
         n_hidden: int = 128,
         dropout_rate: float = 0.1,
         var_eps=1e-4,
+        n_hidden_dist_decoder: int | None = None,
         **kwargs,
     ):
         super().__init__()
