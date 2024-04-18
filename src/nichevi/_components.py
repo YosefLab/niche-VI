@@ -314,9 +314,30 @@ class NicheDecoderAttention(nn.Module):
 
         self.layer_norm_decoder = nn.LayerNorm(n_input_attention)
 
-        self.dist_decoder = nn.Linear(n_input_attention, 2 * n_output)
+        if n_hidden_dist_decoder:
+            self.hidden_dist_decoder = FCLayers(
+                n_in=n_input_attention,
+                n_cat_list=None,
+                n_out=n_hidden_dist_decoder,
+                n_layers=1,
+                n_hidden=n_hidden_dist_decoder,
+                dropout_rate=dropout_rate,
+                use_activation=True,
+                use_batch_norm=False,
+                use_layer_norm=True,
+                **kwargs,
+            )
 
-    def forward(self, z: torch.Tensor, *cat_list: int) -> Tuple[torch.Tensor, torch.Tensor]:
+            self.dist_decoder = nn.Sequential(
+                self.hidden_dist_decoder,
+                nn.Linear(n_hidden_dist_decoder, 2 * n_output),
+            )
+        else:
+            self.dist_decoder = nn.Linear(n_input_attention, 2 * n_output)
+
+    def forward(
+        self, z: torch.Tensor, *cat_list: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Project the input
 
         z_proj = self.z_proj(z, *cat_list)
