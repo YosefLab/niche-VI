@@ -140,7 +140,7 @@ def adjusted_nearest_neighbors(
 
 
 def _get_nonzero_indices_from_rows(csr_matrix, row_idx):
-    return csr_matrix[row_idx].indices
+    return np.unique(csr_matrix[row_idx].indices)
 
 
 def get_connectivity_distribution(csr_matrix):
