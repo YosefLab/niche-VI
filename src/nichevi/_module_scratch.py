@@ -171,6 +171,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         compo_rec_weight: float = 1.0,
         ##############################
         n_heads: int | None = 2,
+        n_hidden_dist_decoder: int | None = None,
         ##############################
         encode_covariates: bool = False,
         deeply_inject_covariates: bool = True,

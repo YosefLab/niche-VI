@@ -164,7 +164,6 @@ class nicheVAE(VAE):
         spatial_weight: float = 1.0,
         niche_rec_weight: float = 1.0,
         compo_rec_weight: float = 1.0,
-        ##############################
         n_heads: int | None = 2,
         n_hidden_dist_decoder: int | None = None,
         ##############################
@@ -272,7 +271,7 @@ class nicheVAE(VAE):
                 n_input_attention=n_heads * n_input_decoder,
                 n_heads=n_heads,
                 n_cat_list=cat_list,
-                n_layers_proj=1,
+                n_layers_proj=n_layers_niche,
                 n_hidden_proj=n_hidden_niche,
                 n_layers=n_layers_niche,
                 n_hidden=n_hidden_niche,

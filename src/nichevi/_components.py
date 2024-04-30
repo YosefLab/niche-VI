@@ -240,6 +240,153 @@ class NicheDecoder(nn.Module):
         return p_m, p_v
 
 
+# class NicheDecoderAttention(nn.Module):
+#     def __init__(
+#         self,
+#         n_input: int,
+#         n_output: int,
+#         n_niche_components: int,
+#         n_input_attention: int,
+#         n_heads: int = 1,
+#         n_cat_list: Iterable[int] = None,
+#         n_layers_proj: int = 1,
+#         n_hidden_proj: int = 64,
+#         n_layers: int = 1,
+#         n_hidden: int = 128,
+#         dropout_rate: float = 0.1,
+#         var_eps=1e-4,
+#         n_hidden_dist_decoder: int | None = None,
+#         **kwargs,
+#     ):
+#         super().__init__()
+
+#         # standard scvi decoder > z_ = MLP(z | batch)
+#         # batch token?
+#         self.var_eps = var_eps
+
+#         # Input z | batch
+#         self.z_proj = FCLayers(
+#             n_in=n_input,
+#             n_out=n_input_attention,
+#             n_cat_list=n_cat_list,
+#             n_layers=n_layers_proj,
+#             n_hidden=n_hidden_proj,
+#             use_activation=True,
+#             use_batch_norm=False,
+#             use_layer_norm=True,
+#             dropout_rate=dropout_rate,
+#             inject_covariates=True,
+#             **kwargs,
+#         )
+
+#         self.z_proj_linear = nn.Sequential(
+#             nn.Linear(n_input_attention, n_input_attention),
+#             nn.LayerNorm(n_input_attention),
+#         )
+
+#         self.cell_type_embedding = nn.Embedding(
+#             num_embeddings=n_niche_components,
+#             embedding_dim=n_input_attention,
+#         )
+
+#         self.layer_norm_cell_type_embedding = nn.LayerNorm(n_input_attention)
+
+#         self.attention_module = nn.MultiheadAttention(
+#             embed_dim=n_input_attention,
+#             num_heads=n_heads,
+#             dropout=dropout_rate,
+#             batch_first=True,
+#         )
+
+#         self.layer_norm_attention_module = nn.LayerNorm(n_input_attention)
+
+#         self.decoder = FCLayers(
+#             n_in=n_input_attention,
+#             n_cat_list=None,
+#             n_out=n_input_attention,
+#             n_layers=n_layers,
+#             n_hidden=n_hidden,
+#             dropout_rate=dropout_rate,
+#             use_activation=True,
+#             use_batch_norm=False,
+#             use_layer_norm=False,
+#             **kwargs,
+#         )
+
+#         self.layer_norm_decoder = nn.LayerNorm(n_input_attention)
+
+#         if n_hidden_dist_decoder:
+#             self.hidden_dist_decoder = FCLayers(
+#                 n_in=n_input_attention,
+#                 n_cat_list=None,
+#                 n_out=n_hidden_dist_decoder,
+#                 n_layers=1,
+#                 n_hidden=n_hidden_dist_decoder,
+#                 dropout_rate=dropout_rate,
+#                 use_activation=True,
+#                 use_batch_norm=False,
+#                 use_layer_norm=True,
+#                 **kwargs,
+#             )
+
+#             self.dist_decoder = nn.Sequential(
+#                 self.hidden_dist_decoder,
+#                 nn.Linear(n_hidden_dist_decoder, 2 * n_output),
+#             )
+#         else:
+#             self.dist_decoder = nn.Linear(n_input_attention, 2 * n_output)
+
+#     def forward(
+#         self, z: torch.Tensor, *cat_list: int
+#     ) -> Tuple[torch.Tensor, torch.Tensor]:
+#         # Project the input
+
+#         z_proj = self.z_proj(z, *cat_list)
+#         z_proj = self.z_proj_linear(z_proj)
+
+#         # Embed all the cell types
+#         cell_type_embedding = self.layer_norm_cell_type_embedding(
+#             self.cell_type_embedding.weight
+#         )  # TODO test without layer norm also
+
+#         # Build the sequence of [latent,cell type embeddings]
+#         if z.ndim == 2:
+#             z_proj = z_proj.unsqueeze(1)
+#             cell_type_embedding = cell_type_embedding.expand(z_proj.size(0), -1, -1)
+#             qkv = torch.cat([z_proj, cell_type_embedding], dim=1)
+#         elif z.ndim == 3:
+#             z_proj = z_proj.unsqueeze(2)
+#             cell_type_embedding = cell_type_embedding.expand(
+#                 z_proj.size(0), z_proj.size(1), -1, -1
+#             )
+#             qkv = torch.cat([z_proj, cell_type_embedding], dim=2)
+#             qkv = qkv.view(-1, qkv.size(2), qkv.size(3))
+
+#         # Apply the attention mechanism
+#         attention_output, attention_weights = self.attention_module(qkv, qkv, qkv)
+
+#         # Apply layer norm
+#         attention_output = self.layer_norm_attention_module(attention_output + qkv)
+
+#         if z.ndim == 3:
+#             attention_output = attention_output.view(
+#                 z_proj.size(0), z_proj.size(1), -1, z_proj.size(3)
+#             )
+
+#         # Decode the attention output
+#         decoded = self.decoder(attention_output)
+
+#         # Apply layer norm
+#         p = self.layer_norm_decoder(decoded + attention_output)
+
+#         p_ct = p[:, 1:, :] if z.ndim == 2 else p[:, :, 1:, :]
+
+#         p_m, p_v = self.dist_decoder(p_ct).chunk(2, dim=-1)
+#         p_v = torch.nn.Softplus()(p_v) + self.var_eps
+
+#         return p_m, p_v, attention_weights
+
+
 class NicheDecoderAttention(nn.Module):
     def __init__(
         self,
@@ -260,8 +407,6 @@ class NicheDecoderAttention(nn.Module):
     ):
         super().__init__()
 
-        # standard scvi decoder > z_ = MLP(z | batch)
-        # batch token?
         self.var_eps = var_eps
 
         # Input z | batch
@@ -275,6 +420,7 @@ class NicheDecoderAttention(nn.Module):
             use_batch_norm=False,
             use_layer_norm=True,
             dropout_rate=dropout_rate,
+            inject_covariates=True,
             **kwargs,
         )
 

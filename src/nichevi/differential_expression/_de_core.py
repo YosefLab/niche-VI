@@ -33,17 +33,20 @@ def _de_core(
     ###### NicheSCVI specific ######
     # sample_key="sample",
     # cell_coordinates_key="spatial",
-    # label_key="labels",
-    radius=100,
+    # label_key="cell_type",
+    radius=50,
     k_nn=None,
     **kwargs,
 ):
     """Internal function for DE interface."""
     adata = adata_manager.adata
+    # adata = adata
     if group1 is None and idx1 is None:
         group1 = adata.obs[groupby].astype("category").cat.categories.tolist()
         if len(group1) == 1:
-            raise ValueError("Only a single group in the data. Can't run DE on a single group.")
+            raise ValueError(
+                "Only a single group in the data. Can't run DE on a single group."
+            )
 
     if not isinstance(group1, IterableClass) or isinstance(group1, str):
         group1 = [group1]
@@ -56,14 +59,15 @@ def _de_core(
         adata.obs[temp_key] = obs_col
         groupby = temp_key
 
-    cell_samples = adata_manager.get_from_registry(
-            NICHEVI_REGISTRY_KEYS.SAMPLE_KEY
-        )
+    cell_samples = adata_manager.get_from_registry(NICHEVI_REGISTRY_KEYS.SAMPLE_KEY)
     cell_labels = adata_manager.get_from_registry(REGISTRY_KEYS.LABELS_KEY)
     cell_coordinates = adata_manager.get_from_registry(
-            NICHEVI_REGISTRY_KEYS.CELL_COORDINATES_KEY
-        )
+        NICHEVI_REGISTRY_KEYS.CELL_COORDINATES_KEY
+    )
 
+    # cell_samples = adata.obs[sample_key].values
+    # cell_labels = adata.obs[label_key].values
+    # cell_coordinates = adata.obsm[cell_coordinates_key]
 
     A = adjusted_nearest_neighbors(
         adata,

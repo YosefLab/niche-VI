@@ -220,7 +220,7 @@ class SpatialAnalysis:
         latent_space_keys: list[str],
         spatial_coord_key: str,
         ct_composition_key: str,
-        k_nn_range: list[int] = [50],
+        k_nn_range: list[int] = None,
         sample_subset: Optional[list[str]] = None,
         z1_reference: Optional[str] = None,
         train_indices: Optional[list[int]] = None,
@@ -228,8 +228,12 @@ class SpatialAnalysis:
         ##########
         set_of_metrics: list[str] = SET_OF_METRICS,
         similarity_metric: str = "spearman",
-        reduction: list[str] = ["median", "mean"],
+        reduction: list[str] = None,
     ):
+        if k_nn_range is None:
+            k_nn_range = [50]
+        if reduction is None:
+            reduction = ["median", "mean"]
         self.adata = adata
         self.sample_subset = sample_subset
         self.train_indices = train_indices
@@ -425,7 +429,7 @@ class SpatialAnalysis:
                                 similarity_parallel, 25, axis=-1
                             )
 
-                        if self.reduction[1] == None:
+                        if self.reduction[1] is None:
                             reducted_similarity = similarity_parallel
 
                         neighborhood_similarity[k].append(reducted_similarity.flatten())
@@ -1219,8 +1223,10 @@ class SpatialAnalysis:
         cell_type_list: list[str] = None,
         batch_key: str = None,
         niche_type_key: str = None,
-        embedding_obsm_keys: list[str] = ["X_scVI"],
+        embedding_obsm_keys: list[str] = None,
     ):
+        if embedding_obsm_keys is None:
+            embedding_obsm_keys = ["X_scVI"]
         self.embedding_obsm_keys = embedding_obsm_keys
         self.cell_type_list = cell_type_list
 

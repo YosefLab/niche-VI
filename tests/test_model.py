@@ -76,6 +76,7 @@ def test_nichevi():
     )
 
     adata.obsm["qz1_m"] = np.random.normal(size=(adata.shape[0], N_LATENT))
+    adata.obsm["qz1_m"] = adata.X.copy()
     adata.layers["counts"] = adata.X.copy()
 
     setup_kwargs = {
