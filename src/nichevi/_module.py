@@ -420,7 +420,8 @@ class nicheVAE(VAE):
             niche_expression = torch.distributions.Poisson(niche_variance)
 
         else:
-            niche_expression = Normal(niche_mean, niche_variance.sqrt())
+            # niche_expression = Normal(niche_mean, niche_variance.sqrt())
+            niche_expression = Normal(niche_mean, niche_variance)
 
         return {
             MODULE_KEYS.PX_KEY: px,

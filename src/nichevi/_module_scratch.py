@@ -169,7 +169,6 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
         spatial_weight: float = 1.0,
         niche_rec_weight: float = 1.0,
         compo_rec_weight: float = 1.0,
-        ##############################
         n_heads: int | None = 2,
         n_hidden_dist_decoder: int | None = None,
         ##############################
@@ -266,7 +265,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
             inject_covariates=deeply_inject_covariates,
             use_batch_norm=use_batch_norm_encoder,
             use_layer_norm=use_layer_norm_encoder,
-            var_activation=var_activation,
+            # var_activation=var_activation,
             return_dist=True,
             **_extra_encoder_kwargs,
         )
@@ -281,7 +280,7 @@ class nicheVAE(EmbeddingModuleMixin, BaseMinifiedModeModuleClass):
             inject_covariates=deeply_inject_covariates,
             use_batch_norm=use_batch_norm_encoder,
             use_layer_norm=use_layer_norm_encoder,
-            var_activation=var_activation,
+            # var_activation=var_activation,
             return_dist=True,
             **_extra_encoder_kwargs,
         )

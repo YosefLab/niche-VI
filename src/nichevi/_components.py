@@ -202,8 +202,10 @@ class NicheDecoder(nn.Module):
             **kwargs,
         )
 
-        self.mean_decoder = nn.Linear(n_hidden, n_output * n_niche_components)
-        self.var_decoder = nn.Linear(n_hidden, n_output * n_niche_components)
+        # self.mean_decoder = nn.Linear(n_hidden, n_output * n_niche_components)
+        # self.var_decoder = nn.Linear(n_hidden, n_output * n_niche_components)
+
+        self.dist_decoder = nn.Linear(n_hidden, 2 * n_output * n_niche_components)
 
     def forward(self, x: torch.Tensor, *cat_list: int):
         """The forward computation for a single sample.
@@ -226,8 +228,11 @@ class NicheDecoder(nn.Module):
         """
         # Parameters for latent distribution
         p = self.decoder(x, *cat_list)
-        p_m = self.mean_decoder(p)
-        p_v = torch.nn.Softplus()(self.var_decoder(p)) + self.var_eps
+
+        p_m, p_v = self.dist_decoder(p).chunk(2, dim=-1)
+        # p_m = self.mean_decoder(p)
+        # p_v = torch.nn.Softplus()(self.var_decoder(p)) + self.var_eps
+        p_v = torch.nn.Softplus()(p_v) + self.var_eps
 
         if p.ndim == 2:
             p_m = p_m.view(p_m.shape[0], self.n_niche_components, self.n_output)
@@ -481,9 +486,7 @@ class NicheDecoderAttention(nn.Module):
         else:
             self.dist_decoder = nn.Linear(n_input_attention, 2 * n_output)
 
-    def forward(
-        self, z: torch.Tensor, *cat_list: int
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, z: torch.Tensor, *cat_list: int) -> Tuple[torch.Tensor, torch.Tensor]:
         # Project the input
 
         z_proj = self.z_proj(z, *cat_list)
