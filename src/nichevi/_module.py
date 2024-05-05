@@ -451,16 +451,16 @@ class nicheVAE(VAE):
         kl_divergence_z = kl_divergence(
             inference_outputs[MODULE_KEYS.QZ_KEY],
             generative_outputs[MODULE_KEYS.PZ_KEY],
-        ).sum(dim=-1)
+        ).mean(dim=-1)
         if not self.use_observed_lib_size:
             kl_divergence_l = kl_divergence(
                 inference_outputs[MODULE_KEYS.QL_KEY],
                 generative_outputs[MODULE_KEYS.PL_KEY],
-            ).sum(dim=1)
+            ).mean(dim=1)
         else:
             kl_divergence_l = torch.tensor(0.0, device=x.device)
 
-        reconst_loss_cell = -generative_outputs[MODULE_KEYS.PX_KEY].log_prob(x).sum(-1)
+        reconst_loss_cell = -generative_outputs[MODULE_KEYS.PX_KEY].log_prob(x).mean(-1)
 
         kl_local_for_warmup = kl_divergence_z
         kl_local_no_warmup = kl_divergence_l
@@ -473,7 +473,7 @@ class nicheVAE(VAE):
         z1_mean_niche = tensors[NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY]  # batch times cell_types times n_latent
 
         reconst_loss_niche = (
-            -generative_outputs[NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION].log_prob(z1_mean_niche).sum(dim=(-1))
+            -generative_outputs[NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION].log_prob(z1_mean_niche).mean(dim=(-1))
         )
 
         masked_reconst_loss_niche = (reconst_loss_niche * niche_weights).sum(dim=-1)
