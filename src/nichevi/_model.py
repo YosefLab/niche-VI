@@ -399,6 +399,38 @@ class nicheSCVI(
         self.module.minified_data_type = minified_data_type
 
     @torch.inference_mode()
+    def predict_neighborhood(
+        self,
+        adata: AnnData | None = None,
+        indices: np.ndarray | None = None,
+        batch_size: int | None = 1024,
+    ):
+        self._check_if_trained(warn=False)
+
+        adata = self._validate_anndata(adata)
+        scdl = self._make_data_loader(adata=adata, indices=indices, batch_size=batch_size)
+
+        ct_prediction = []
+        for tensors in scdl:
+            inference_inputs = self.module._get_inference_input(tensors)
+            outputs = self.module.inference(**inference_inputs)
+
+            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
+            decoder_input = outputs["qz"].loc
+
+            # put batch_index in the same device as decoder_input
+            batch_index = batch_index.to(decoder_input.device)
+
+            predicted_ct_prob = self.module.composition_decoder(
+                decoder_input,
+                batch_index,
+            )  # no batch correction here
+
+            ct_prediction.append(predicted_ct_prob.detach().cpu())
+
+        return torch.cat(ct_prediction).numpy()
+
+    @torch.inference_mode()
     def get_niche_attention(
         self,
         adata: AnnData | None = None,
