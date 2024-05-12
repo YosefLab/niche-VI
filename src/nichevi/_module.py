@@ -486,7 +486,7 @@ class nicheVAE(VAE):
 
         reconst_niche_composition = generative_outputs[NICHEVI_MODULE_KEYS.P_NICHE_COMPOSITION]
 
-        composition_loss = -reconst_niche_composition.log_prob(true_niche_composition)
+        composition_loss = -reconst_niche_composition.log_prob(true_niche_composition) / true_niche_composition.size(-1)
 
         _weighted_reconst_loss_cell = self.cell_rec_weight * reconst_loss_cell
         _weighted_reconst_loss_niche = spatial_weight * self.niche_rec_weight * masked_reconst_loss_niche
