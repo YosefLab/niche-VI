@@ -472,9 +472,15 @@ class nicheVAE(VAE):
 
         z1_mean_niche = tensors[NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY]  # batch times cell_types times n_latent
 
-        reconst_loss_niche = (
-            -generative_outputs[NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION].log_prob(z1_mean_niche).sum(dim=(-1))
-        )
+        # reconst_loss_niche = (
+        #     -generative_outputs[NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION].log_prob(z1_mean_niche).sum(dim=(-1))
+        # )
+
+        reconst_loss_niche = torch.nn.functional.mse_loss(
+            z1_mean_niche,
+            generative_outputs[NICHEVI_MODULE_KEYS.NICHE_MEAN],
+            reduction="none",
+        ).sum(dim=-1)
 
         masked_reconst_loss_niche = (reconst_loss_niche * niche_weights).sum(dim=-1)
 
