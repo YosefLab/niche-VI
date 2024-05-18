@@ -44,9 +44,7 @@ def _de_core(
     if group1 is None and idx1 is None:
         group1 = adata.obs[groupby].astype("category").cat.categories.tolist()
         if len(group1) == 1:
-            raise ValueError(
-                "Only a single group in the data. Can't run DE on a single group."
-            )
+            raise ValueError("Only a single group in the data. Can't run DE on a single group.")
 
     if not isinstance(group1, IterableClass) or isinstance(group1, str):
         group1 = [group1]
@@ -61,9 +59,7 @@ def _de_core(
 
     cell_samples = adata_manager.get_from_registry(NICHEVI_REGISTRY_KEYS.SAMPLE_KEY)
     cell_labels = adata_manager.get_from_registry(REGISTRY_KEYS.LABELS_KEY)
-    cell_coordinates = adata_manager.get_from_registry(
-        NICHEVI_REGISTRY_KEYS.CELL_COORDINATES_KEY
-    )
+    cell_coordinates = adata_manager.get_from_registry(NICHEVI_REGISTRY_KEYS.CELL_COORDINATES_KEY)
 
     # cell_samples = adata.obs[sample_key].values
     # cell_labels = adata.obs[label_key].values
@@ -81,10 +77,10 @@ def _de_core(
     # df_results = []
     DE_results = {
         "group1_group2": [],
-        "group1_niche1": [],
+        "niche1_group2": [],
     }
-    if group2 is not None:
-        DE_results["group2_niche2"] = []
+    # if group2 is not None:
+    #     DE_results["group1_niche2"] = []
 
     dc = DifferentialComputation(model_fn, representation_fn, adata_manager)
     for g1 in track(
@@ -97,27 +93,29 @@ def _de_core(
 
         if group2 is None:
             cell_idx2 = ~cell_idx1
-            neighbors_idx2 = None
+            # neighbors_idx2 = None
             DE_indices = {
                 "group1_group2": [cell_idx1, cell_idx2],
-                "group1_niche1": [cell_idx1, neighbors_idx1],
+                "niche1_group2": [neighbors_idx1, cell_idx2],
             }
             DE_group_names = {
                 "group1_group2": [g1, "Rest"],
-                "group1_niche1": [g1, f"{g1}_neighbors"],
+                "niche1_group2": [f"{g1}_neighbors", "Rest"],
             }
         else:
             cell_idx2 = (adata.obs[groupby] == group2).to_numpy().ravel()
-            neighbors_idx2 = _get_nonzero_indices_from_rows(A, cell_idx2)
+            # neighbors_idx2 = _get_nonzero_indices_from_rows(A, cell_idx2)
             DE_indices = {
                 "group1_group2": [cell_idx1, cell_idx2],
-                "group1_niche1": [cell_idx1, neighbors_idx1],
-                "group2_niche2": [cell_idx2, neighbors_idx2],
+                "niche1_group2": [neighbors_idx1, cell_idx2],
+                # "group1_niche1": [cell_idx1, neighbors_idx1],
+                # "group2_niche2": [cell_idx2, neighbors_idx2],
             }
             DE_group_names = {
                 "group1_group2": [g1, group2],
-                "group1_niche1": [g1, f"{g1}_neighbors"],
-                "group2_niche2": [group2, f"{group2}_neighbors"],
+                "niche1_group2": [f"{g1}_neighbors", group2],
+                # "group1_niche1": [g1, f"{g1}_neighbors"],
+                # "group2_niche2": [group2, f"{group2}_neighbors"],
             }
 
         for comparison, [cell_idx1, cell_idx2] in DE_indices.items():
