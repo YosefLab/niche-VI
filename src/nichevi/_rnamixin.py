@@ -39,6 +39,7 @@ class NicheRNASeqMixin(RNASeqMixin):
         ###### NicheSCVI specific ######
         radius=100,
         k_nn=None,
+        count_corruption: float | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         r"""A unified method for differential expression analysis.
@@ -88,9 +89,7 @@ class NicheRNASeqMixin(RNASeqMixin):
             weights=weights,
             **importance_weighting_kwargs,
         )
-        representation_fn = (
-            self.get_latent_representation if filter_outlier_cells else None
-        )
+        representation_fn = self.get_latent_representation if filter_outlier_cells else None
 
         result = _de_core(
             self.get_anndata_manager(adata, required=True),
@@ -116,6 +115,7 @@ class NicheRNASeqMixin(RNASeqMixin):
             # label_key=label_key,
             radius=radius,
             k_nn=k_nn,
+            count_corruption=count_corruption,
             **kwargs,
         )
 

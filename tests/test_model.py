@@ -168,12 +168,14 @@ def test_nichevi():
     nichevae.differential_expression(
         groupby="labels",
         group1="label_1",
+        group2="label_2",
         batch_correction=False,
         # sample_key="batch",
         # cell_coordinates_key="coordinates",
         # label_key="labels",
-        radius=50,
-        k_nn=None,
+        radius=None,
+        k_nn=5,
+        count_corruption=0.1,
     )
     nichevae.differential_expression(
         groupby="labels",
@@ -185,6 +187,7 @@ def test_nichevi():
         # label_key="labels",
         radius=50,
         k_nn=None,
+        count_corruption=None,
     )
 
 

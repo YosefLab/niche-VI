@@ -1,5 +1,6 @@
 from collections.abc import Iterable as IterableClass
 
+import numpy as np
 import pandas as pd
 from scvi import REGISTRY_KEYS
 from scvi.model.base._differential import DifferentialComputation
@@ -36,6 +37,7 @@ def _de_core(
     # label_key="cell_type",
     radius=50,
     k_nn=None,
+    count_corruption: float | None = None,
     **kwargs,
 ):
     """Internal function for DE interface."""
@@ -75,10 +77,17 @@ def _de_core(
         return_sparse=True,
     )
     # df_results = []
-    DE_results = {
-        "group1_group2": [],
-        "niche1_group2": [],
-    }
+    DE_results = (
+        {
+            "group1_group2": [],
+            "niche1_group2": [],
+        }
+        if count_corruption is None
+        else {
+            "group1_group2": [],
+            "group1_corrupted1": [],
+        }
+    )
     # if group2 is not None:
     #     DE_results["group1_niche2"] = []
 
@@ -91,39 +100,93 @@ def _de_core(
         cell_idx1 = (adata.obs[groupby] == g1).to_numpy().ravel()
         neighbors_idx1 = _get_nonzero_indices_from_rows(A, cell_idx1)
 
+        if count_corruption is not None:
+            x_uncorr = adata.layers["counts"][cell_idx1]
+            x_niche1 = A[cell_idx1] @ adata.layers["counts"]
+
+            x_uncorr_sum = x_uncorr.sum(axis=1)
+            x_niche1_sum = x_niche1.sum(axis=1)
+
+            corruption_weights = np.divide(
+                count_corruption * x_uncorr_sum,
+                x_niche1_sum,
+                out=np.zeros_like(x_niche1_sum, dtype=float),
+                where=x_niche1_sum != 0,
+            )
+
+            x_corr = x_niche1.multiply(corruption_weights)
+            x_corr = x_uncorr + x_corr.ceil().astype(int)
+
+            # Trick to avoid double counting. Only works if len(neighbors_idx1) > len(cell_idx1) which I assume is the case
+            neighbors_idx1 = neighbors_idx1[: cell_idx1.sum()]
+
+            # Save the original counts of this index
+            x_original = adata.layers["counts"][neighbors_idx1]
+
+            # Then replace with the corrupted counts
+            dc.adata.layers["counts"][neighbors_idx1] = x_corr
+
         if group2 is None:
             cell_idx2 = ~cell_idx1
             # neighbors_idx2 = None
-            DE_indices = {
-                "group1_group2": [cell_idx1, cell_idx2],
-                "niche1_group2": [neighbors_idx1, cell_idx2],
-            }
-            DE_group_names = {
-                "group1_group2": [g1, "Rest"],
-                "niche1_group2": [f"{g1}_neighbors", "Rest"],
-            }
+            DE_indices = (
+                {
+                    "group1_group2": [cell_idx1, cell_idx2],
+                    "group1_corrupted1": [cell_idx1, neighbors_idx1],
+                }
+                if count_corruption
+                else {
+                    "group1_group2": [cell_idx1, cell_idx2],
+                    "niche1_group2": [neighbors_idx1, cell_idx2],
+                }
+            )
+            DE_group_names = (
+                {
+                    "group1_group2": [g1, "Rest"],
+                    "group1_corrupted1": [g1, f"{g1}_corrupted"],
+                }
+                if count_corruption
+                else {
+                    "group1_group2": [g1, "Rest"],
+                    "niche1_group2": [f"{g1}_neighbors", "Rest"],
+                }
+            )
         else:
             cell_idx2 = (adata.obs[groupby] == group2).to_numpy().ravel()
             # neighbors_idx2 = _get_nonzero_indices_from_rows(A, cell_idx2)
-            DE_indices = {
-                "group1_group2": [cell_idx1, cell_idx2],
-                "niche1_group2": [neighbors_idx1, cell_idx2],
-                # "group1_niche1": [cell_idx1, neighbors_idx1],
-                # "group2_niche2": [cell_idx2, neighbors_idx2],
-            }
-            DE_group_names = {
-                "group1_group2": [g1, group2],
-                "niche1_group2": [f"{g1}_neighbors", group2],
-                # "group1_niche1": [g1, f"{g1}_neighbors"],
-                # "group2_niche2": [group2, f"{group2}_neighbors"],
-            }
+            DE_indices = (
+                {
+                    "group1_group2": [cell_idx1, cell_idx2],
+                    "niche1_group2": [neighbors_idx1, cell_idx2],
+                    # "group1_niche1": [cell_idx1, neighbors_idx1],
+                    # "group2_niche2": [cell_idx2, neighbors_idx2],
+                }
+                if count_corruption is None
+                else {
+                    "group1_group2": [cell_idx1, cell_idx2],
+                    "group1_corrupted1": [cell_idx1, neighbors_idx1],
+                }
+            )
+            DE_group_names = (
+                {
+                    "group1_group2": [g1, group2],
+                    "niche1_group2": [f"{g1}_neighbors", group2],
+                    # "group1_niche1": [g1, f"{g1}_neighbors"],
+                    # "group2_niche2": [group2, f"{group2}_neighbors"],
+                }
+                if count_corruption is None
+                else {
+                    "group1_group2": [g1, group2],
+                    "group1_corrupted1": [g1, f"{g1}_corrupted"],
+                }
+            )
 
-        for comparison, [cell_idx1, cell_idx2] in DE_indices.items():
+        for comparison, [cell_idx_a, cell_idx_b] in DE_indices.items():
             print(f"Running DE for {comparison}")
 
             all_info = dc.get_bayes_factors(
-                cell_idx1,
-                cell_idx2,
+                cell_idx_a,
+                cell_idx_b,
                 mode=mode,
                 delta=delta,
                 batchid1=batchid1,
@@ -133,7 +196,7 @@ def _de_core(
             )
 
             if all_stats is True:
-                genes_properties_dict = all_stats_fn(adata_manager, cell_idx1, cell_idx2)
+                genes_properties_dict = all_stats_fn(adata_manager, cell_idx_a, cell_idx_b)
                 all_info = {**all_info, **genes_properties_dict}
 
             res = pd.DataFrame(all_info, index=col_names)
@@ -149,6 +212,10 @@ def _de_core(
                 res["group1"] = g1_name
                 res["group2"] = g2_name
             DE_results[comparison].append(res)
+
+        if count_corruption is not None:
+            # Restore the original counts
+            dc.adata.layers["counts"][neighbors_idx1] = x_original
 
     if temp_key is not None:
         del adata.obs[temp_key]

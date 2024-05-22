@@ -60,8 +60,7 @@ def corrupt_counts(
     # )
 
     corrupted_counts = (
-        _normalized_counts
-        + spatial_weight * weighted_neighbors
+        _normalized_counts + spatial_weight * weighted_neighbors
         # _normalized_neighbors_counts
     )
 
@@ -103,10 +102,7 @@ def adjusted_nearest_neighbors(
         sample_cell_types = np.squeeze(cell_labels[mask], axis=1)
 
         # build a dict of masks for each cell type
-        cell_type_masks = {
-            cell_type: sample_cell_types != cell_type
-            for cell_type in np.unique(sample_cell_types)
-        }
+        cell_type_masks = {cell_type: sample_cell_types != cell_type for cell_type in np.unique(sample_cell_types)}
 
         # make it a df
         cell_type_masks_df = pd.DataFrame(cell_type_masks).transpose()
@@ -132,6 +128,10 @@ def adjusted_nearest_neighbors(
         adjacency_matrices.append(A_adjusted.astype(bool, copy=False))
 
     adjacency_matrix = block_diag(adjacency_matrices, format="csr")
+
+    row_counts = np.diff(adjacency_matrix.indptr)
+    # print mean and std of number of neighbors with a sigma letter for the std, round to 2 decimals:
+    print(f"Mean number of neighbors: {np.mean(row_counts):.1f} ± {np.std(row_counts):.1f}")
 
     if return_sparse:
         return adjacency_matrix
