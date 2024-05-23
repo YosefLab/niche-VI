@@ -426,7 +426,7 @@ class nicheSCVI(
                 batch_index,
             )  # no batch correction here
 
-            ct_prediction.append(predicted_ct_prob.detach().cpu())
+            ct_prediction.append(predicted_ct_prob.concentration.detach().cpu())
 
         return torch.cat(ct_prediction).numpy()
 
