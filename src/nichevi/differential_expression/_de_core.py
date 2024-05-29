@@ -1,18 +1,22 @@
 from collections.abc import Iterable as IterableClass
 
+import anndata as ad
 import numpy as np
 import pandas as pd
+from scipy.sparse import csr_matrix
 from scvi import REGISTRY_KEYS
-from scvi.model.base._differential import DifferentialComputation
+
+# from scvi.model.base._differential import DifferentialComputation
 from scvi.model.base._utils import _fdr_de_prediction, _prepare_obs
 from scvi.utils import track
 
 from nichevi import NICHEVI_REGISTRY_KEYS
 
-from ._de_utils import _get_nonzero_indices_from_rows, adjusted_nearest_neighbors
+from ._de_utils import _get_nonzero_indices_from_rows, adjusted_nearest_neighbors, corrupt_counts
+from ._differential import DifferentialComputation
 
 
-def _de_core(
+def _niche_de_core(
     adata_manager,
     model_fn,
     representation_fn,
@@ -106,18 +110,18 @@ def _de_core(
             x_uncorr = adata.layers["counts"][cell_idx1]
             x_niche1 = A[cell_idx1] @ adata.layers["counts"]
 
-            x_uncorr_sum = x_uncorr.sum(axis=1)
-            x_niche1_sum = x_niche1.sum(axis=1)
+            # x_uncorr_sum = x_uncorr.sum(axis=1)
+            # x_niche1_sum = x_niche1.sum(axis=1)
+            # corruption_weights = np.divide(
+            #     count_corruption * x_uncorr_sum,
+            #     x_niche1_sum,
+            #     out=np.zeros_like(x_niche1_sum, dtype=float),
+            #     where=x_niche1_sum != 0,
+            # )
+            # x_corr = x_niche1.multiply(corruption_weights)
+            # x_corr = x_uncorr + x_corr.ceil().astype(int)  # TODO by random
 
-            corruption_weights = np.divide(
-                count_corruption * x_uncorr_sum,
-                x_niche1_sum,
-                out=np.zeros_like(x_niche1_sum, dtype=float),
-                where=x_niche1_sum != 0,
-            )
-
-            x_corr = x_niche1.multiply(corruption_weights)
-            x_corr = x_uncorr + x_corr.ceil().astype(int)
+            x_corr = corrupt_counts(x_uncorr, x_niche1, target_corruption=count_corruption, rounding="random")
 
             # Trick to avoid double counting. Only works if len(neighbors_idx1) > len(cell_idx1) which I assume is the case
             neighbors_idx1 = neighbors_idx1[: cell_idx1.sum()]
@@ -221,6 +225,7 @@ def _de_core(
         if count_corruption is not None:
             # Restore the original counts
             dc.adata.layers["counts"][neighbors_idx1] = x_original
+            adata_manager.adata.layers["counts"][neighbors_idx1] = x_original
 
     if temp_key is not None:
         del adata.obs[temp_key]
@@ -233,3 +238,100 @@ def _de_core(
         DE_results[groups] = pd.concat(group_DE_result, axis=0).reindex(idx_g1_g2)
 
     return DE_results
+
+
+def _dummy_adata(
+    adata_manager,
+    groupby,
+    group1,
+    group2,
+    radius=None,
+    k_nn=7,
+    count_corruption=0.1,
+):
+    adata = adata_manager.adata
+
+    """Internal function for DE interface."""
+    cell_samples = adata_manager.get_from_registry(NICHEVI_REGISTRY_KEYS.SAMPLE_KEY)
+    cell_labels = adata_manager.get_from_registry(REGISTRY_KEYS.LABELS_KEY)
+    cell_coordinates = adata_manager.get_from_registry(NICHEVI_REGISTRY_KEYS.CELL_COORDINATES_KEY)
+
+    # cell_samples = adata.obs[sample_key].values
+    # cell_labels = adata.obs[label_key].values
+    # cell_coordinates = adata.obsm[cell_coordinates_key]
+
+    A = adjusted_nearest_neighbors(
+        adata,
+        cell_samples=cell_samples,
+        cell_coordinates=cell_coordinates,
+        cell_labels=cell_labels,
+        radius=radius,
+        k_nn=k_nn,
+        return_sparse=True,
+    )
+
+    """Internal function for DE interface."""
+    # adata = adata
+    if group1 is None:
+        group1 = adata.obs[groupby].astype("category").cat.categories.tolist()
+        if len(group1) == 1:
+            raise ValueError("Only a single group in the data. Can't run DE on a single group.")
+
+    cell_idx1 = (adata.obs[groupby] == group1).to_numpy().ravel()  # bool
+    neighbors_idx1 = _get_nonzero_indices_from_rows(A, cell_idx1)  # indices
+
+    if group2 is None:
+        cell_idx2 = ~cell_idx1  # bool
+    else:
+        cell_idx2 = (adata.obs[groupby] == group2).to_numpy().ravel()  # bool
+
+    x_uncorr = adata.layers["counts"][cell_idx1]
+    x_niche1 = A[cell_idx1] @ adata.layers["counts"]
+
+    # make sparse if not already
+    if not isinstance(x_uncorr, csr_matrix):
+        x_uncorr = csr_matrix(x_uncorr)
+    if not isinstance(x_niche1, csr_matrix):
+        x_niche1 = csr_matrix(x_niche1)
+
+    x_corr = corrupt_counts(x_uncorr, x_niche1, target_corruption=count_corruption, rounding="random")
+
+    n_obs = (
+        2 * cell_idx1.sum() + cell_idx2.sum() + len(neighbors_idx1)
+        if group2 is not None
+        else cell_idx1.sum() + len(neighbors_idx1) + adata.n_obs
+    )
+
+    n_vars = adata.n_vars
+
+    adata_dummy = ad.AnnData(csr_matrix(np.zeros((n_obs, n_vars))))
+
+    adata_dummy.obs = adata.obs.iloc[:n_obs].copy()
+    adata_dummy.obs[groupby] = "Unknown"
+
+    adata_dummy.X[: cell_idx1.sum(), :] = x_uncorr
+    adata_dummy.obs.iloc[: cell_idx1.sum()] = adata.obs.iloc[: cell_idx1.sum()]
+    adata_dummy.obs[groupby].iloc[: cell_idx1.sum()] = group1
+
+    adata_dummy.X[cell_idx1.sum() : 2 * cell_idx1.sum(), :] = x_corr
+    adata_dummy.obs.iloc[cell_idx1.sum() : 2 * cell_idx1.sum()] = adata.obs.iloc[cell_idx1.sum() : 2 * cell_idx1.sum()]
+    adata_dummy.obs[groupby].iloc[cell_idx1.sum() : 2 * cell_idx1.sum()] = f"{group1}_corrupted"
+
+    if group2 is not None:
+        adata_dummy.X[2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum(), :] = adata.layers["counts"][
+            cell_idx2
+        ]
+        adata_dummy.obs.iloc[2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum()] = adata.obs.iloc[
+            2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum()
+        ]
+        adata_dummy.obs[groupby].iloc[2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum()] = group2
+
+    adata_dummy.X[2 * cell_idx1.sum() + cell_idx2.sum() :, :] = adata.layers["counts"][neighbors_idx1]
+    adata_dummy.obs.iloc[2 * cell_idx1.sum() + cell_idx2.sum() :] = adata.obs.iloc[neighbors_idx1]
+    adata_dummy.obs[groupby].iloc[2 * cell_idx1.sum() + cell_idx2.sum() :] = f"{group1}_neighbors"
+
+    adata_dummy.layers["counts"] = adata_dummy.X
+    adata_dummy.var_names = adata.var_names
+    adata_dummy.var = adata.var
+
+    return adata_dummy

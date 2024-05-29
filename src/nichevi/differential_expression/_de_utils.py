@@ -15,67 +15,114 @@ def normalize_counts(
     return target_sum * X / X.sum(axis=1, keepdims=True)
 
 
+def probabilistic_rounding(array: np.ndarray) -> np.ndarray:
+    """Round an array of floats to integers probabilistically."""
+    uniform_random = np.random.rand(*array.shape)
+
+    array_int = np.floor(array)
+
+    array_float = array - array_int
+
+    proba_mask = array_float > uniform_random
+
+    array_int[proba_mask] += 1
+
+    return array_int
+
+
 def corrupt_counts(
-    adata: ad.AnnData,
-    niche_indexes_key: str,
-    niche_distances_key: str,
-    use_layer: str | None = None,
-    add_layer: str = "corrupted_counts",
-    k_nn: int = 7,
-    bandwidth: Literal["mean", "median", "none"] = "median",
-    save_weights: bool = False,
-    target_sum: float = 1e4,
-    spatial_weight: float = 1.0,
-    log1p: bool = False,
-):
-    distance_matrix = adata.obsm[niche_distances_key][:, :k_nn]
-    idx = adata.obsm[niche_indexes_key][:, :k_nn]
+    origin_counts: csr_matrix,
+    neighbors_counts: csr_matrix,
+    target_corruption: float = 0.1,
+    rounding: Literal["ceil", "floor", "round", "random"] = "random",
+) -> csr_matrix:
+    x_uncorr_sum = origin_counts.sum(axis=1)
+    x_niche1_sum = neighbors_counts.sum(axis=1)
 
-    if bandwidth == "mean":
-        bandwidth = np.mean(np.min(distance_matrix, axis=1))
-    elif bandwidth == "median":
-        # bandwidth = np.median(np.min(distance_matrix, axis=1))
-        bandwidth = np.median(distance_matrix, axis=1)
-    else:
-        bandwidth = np.ones(distance_matrix.shape[0])
-
-    if use_layer is not None:
-        counts = adata.layers[use_layer].copy()
-    else:
-        counts = adata.X.copy()
-
-    if sp.issparse(counts):
-        counts = counts.toarray()
-
-    _exp_argument = -((distance_matrix / bandwidth[:, None]) ** 2)
-    _exp_argument = np.exp(_exp_argument)
-    _exp_argument = _exp_argument / np.sum(_exp_argument, axis=1)[:, None]
-
-    _normalized_counts = normalize_counts(counts, target_sum=target_sum)
-
-    weighted_neighbors = np.einsum("ij,ijk->ik", _exp_argument, _normalized_counts[idx])
-
-    # _normalized_neighbors_counts = normalize_counts(
-    #     weighted_neighbors, target_sum=target_sum
-    # )
-
-    corrupted_counts = (
-        _normalized_counts + spatial_weight * weighted_neighbors
-        # _normalized_neighbors_counts
+    corruption_weights = np.divide(
+        target_corruption * x_uncorr_sum,
+        x_niche1_sum,
+        out=np.zeros_like(x_niche1_sum, dtype=float),
+        where=x_niche1_sum != 0,
     )
 
-    _normalized_corr_counts = normalize_counts(corrupted_counts, target_sum=target_sum)
+    x_corr = neighbors_counts.multiply(corruption_weights)
 
-    corrupted_counts = np.log1p(_normalized_corr_counts)
-    unc_counts = np.log1p(_normalized_counts)
+    if rounding == "ceil":
+        x_corr = x_corr.ceil().astype(int)
+    elif rounding == "floor":
+        x_corr = x_corr.floor().astype(int)
+    elif rounding == "round":
+        x_corr.data = x_corr.data.round().astype(int)
+    elif rounding == "random":
+        x_corr.data = probabilistic_rounding(x_corr.data)
 
-    adata.layers[add_layer] = csr_matrix(corrupted_counts)
-    adata.layers["uncorrupted_counts"] = csr_matrix(unc_counts)
+    x_corr = origin_counts + x_corr
 
-    if save_weights:
-        adata.obsm["corruption_weights"] = _exp_argument
+    return x_corr
 
-    return None
+
+# def corrupt_counts(
+#     adata: ad.AnnData,
+#     niche_indexes_key: str,
+#     niche_distances_key: str,
+#     use_layer: str | None = None,
+#     add_layer: str = "corrupted_counts",
+#     k_nn: int = 7,
+#     bandwidth: Literal["mean", "median", "none"] = "median",
+#     save_weights: bool = False,
+#     target_sum: float = 1e4,
+#     spatial_weight: float = 1.0,
+#     log1p: bool = False,
+# ):
+#     distance_matrix = adata.obsm[niche_distances_key][:, :k_nn]
+#     idx = adata.obsm[niche_indexes_key][:, :k_nn]
+
+#     if bandwidth == "mean":
+#         bandwidth = np.mean(np.min(distance_matrix, axis=1))
+#     elif bandwidth == "median":
+#         # bandwidth = np.median(np.min(distance_matrix, axis=1))
+#         bandwidth = np.median(distance_matrix, axis=1)
+#     else:
+#         bandwidth = np.ones(distance_matrix.shape[0])
+
+#     if use_layer is not None:
+#         counts = adata.layers[use_layer].copy()
+#     else:
+#         counts = adata.X.copy()
+
+#     if sp.issparse(counts):
+#         counts = counts.toarray()
+
+#     _exp_argument = -((distance_matrix / bandwidth[:, None]) ** 2)
+#     _exp_argument = np.exp(_exp_argument)
+#     _exp_argument = _exp_argument / np.sum(_exp_argument, axis=1)[:, None]
+
+#     _normalized_counts = normalize_counts(counts, target_sum=target_sum)
+
+#     weighted_neighbors = np.einsum("ij,ijk->ik", _exp_argument, _normalized_counts[idx])
+
+#     # _normalized_neighbors_counts = normalize_counts(
+#     #     weighted_neighbors, target_sum=target_sum
+#     # )
+
+#     corrupted_counts = (
+#         _normalized_counts + spatial_weight * weighted_neighbors
+#         # _normalized_neighbors_counts
+#     )
+
+#     _normalized_corr_counts = normalize_counts(corrupted_counts, target_sum=target_sum)
+
+#     corrupted_counts = np.log1p(_normalized_corr_counts)
+#     unc_counts = np.log1p(_normalized_counts)
+
+#     adata.layers[add_layer] = csr_matrix(corrupted_counts)
+#     adata.layers["uncorrupted_counts"] = csr_matrix(unc_counts)
+
+#     if save_weights:
+#         adata.obsm["corruption_weights"] = _exp_argument
+
+#     return None
 
 
 def adjusted_nearest_neighbors(

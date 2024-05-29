@@ -7,11 +7,12 @@ from scvi.model._utils import scrna_raw_counts_properties
 from scvi.model.base import (
     RNASeqMixin,
 )
+from scvi.model.base._utils import _de_core
 
 # from scvi.model.base._utils import _de_core
 from scvi.utils import de_dsp
 
-from .differential_expression import _de_core
+from .differential_expression import _niche_de_core
 
 
 class NicheRNASeqMixin(RNASeqMixin):
@@ -37,9 +38,10 @@ class NicheRNASeqMixin(RNASeqMixin):
         filter_outlier_cells: bool = False,
         importance_weighting_kwargs: dict | None = None,
         ###### NicheSCVI specific ######
-        radius=100,
-        k_nn=None,
+        radius: int | None = 50,
+        k_nn: int | None = None,
         count_corruption: float | None = None,
+        niche_mode: bool = True,
         **kwargs,
     ) -> pd.DataFrame:
         r"""A unified method for differential expression analysis.
@@ -71,6 +73,14 @@ class NicheRNASeqMixin(RNASeqMixin):
         importance_weighting_kwargs
             Keyword arguments passed into
             :meth:`~scvi.model.base.RNASeqMixin._get_importance_weights`.
+        radius
+            Radius for NicheSCVI DE.
+        k_nn
+            Number of nearest neighbors for NicheSCVI DE.
+        count_corruption
+            Whether to corrupt the counts for NicheSCVI DE, and if so, by how much in terms of percentage of added noise.
+        niche_mode
+            Whether to use NicheSCVI DE or SCVI DE.
         **kwargs
             Keyword args for :meth:`scvi.model.base.DifferentialComputation.get_bayes_factors`
 
@@ -91,32 +101,53 @@ class NicheRNASeqMixin(RNASeqMixin):
         )
         representation_fn = self.get_latent_representation if filter_outlier_cells else None
 
-        result = _de_core(
-            self.get_anndata_manager(adata, required=True),
-            model_fn,
-            representation_fn,
-            groupby,
-            group1,
-            group2,
-            idx1,
-            idx2,
-            all_stats,
-            scrna_raw_counts_properties,
-            col_names,
-            mode,
-            batchid1,
-            batchid2,
-            delta,
-            batch_correction,
-            fdr_target,
-            silent,
-            # sample_key=sample_key,
-            # cell_coordinates_key=cell_coordinates_key,
-            # label_key=label_key,
-            radius=radius,
-            k_nn=k_nn,
-            count_corruption=count_corruption,
-            **kwargs,
-        )
+        if niche_mode:
+            result = _niche_de_core(
+                self.get_anndata_manager(adata, required=True),
+                model_fn,
+                representation_fn,
+                groupby,
+                group1,
+                group2,
+                idx1,
+                idx2,
+                all_stats,
+                scrna_raw_counts_properties,
+                col_names,
+                mode,
+                batchid1,
+                batchid2,
+                delta,
+                batch_correction,
+                fdr_target,
+                silent,
+                radius=radius,
+                k_nn=k_nn,
+                count_corruption=count_corruption,
+                **kwargs,
+            )
+
+        else:
+            result = _de_core(
+                self.get_anndata_manager(adata, required=True),
+                model_fn,
+                representation_fn,
+                groupby,
+                group1,
+                group2,
+                idx1,
+                idx2,
+                all_stats,
+                scrna_raw_counts_properties,
+                col_names,
+                mode,
+                batchid1,
+                batchid2,
+                delta,
+                batch_correction,
+                fdr_target,
+                silent,
+                **kwargs,
+            )
 
         return result

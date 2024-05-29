@@ -6,6 +6,7 @@ from scvi.data._compat import LEGACY_REGISTRY_KEY_MAP, registry_from_setup_dict
 from scvi.model.utils import mde
 
 from nichevi import nicheSCVI
+from nichevi.differential_expression import _dummy_adata
 
 LEGACY_REGISTRY_KEYS = set(LEGACY_REGISTRY_KEY_MAP.values())
 LEGACY_SETUP_DICT = {
@@ -165,6 +166,19 @@ def test_nichevi():
     # nichevae.get_latent_representation()
     # nichevae.predict_neighborhood()  # specific to nicheSCVI
     # nichevae.predict_niche_activation()  # specific to nicheSCVI
+
+    adata_manager = nichevae.get_anndata_manager(adata, required=True)
+
+    dummy_adata = _dummy_adata(
+        adata_manager,
+        groupby="labels",
+        group1="label_1",
+        group2="label_2",
+        radius=None,
+        k_nn=7,
+        count_corruption=0.1,
+    )
+
     nichevae.differential_expression(
         groupby="labels",
         group1="label_1",
