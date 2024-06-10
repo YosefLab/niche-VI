@@ -406,15 +406,12 @@ class nicheVAE(VAE):
 
         if self.n_heads is not None:
             if self.batch_representation == "embedding":
-                niche_mean, niche_variance, niche_attention = self.niche_decoder(decoder_input, *categorical_input)
+                niche_mean, niche_variance = self.niche_decoder(decoder_input, *categorical_input)
             else:  # one-hot
-                niche_mean, niche_variance, niche_attention = self.niche_decoder(
-                    decoder_input, batch_index, *categorical_input
-                )
+                niche_mean, niche_variance = self.niche_decoder(decoder_input, batch_index, *categorical_input)
 
         else:
             niche_mean, niche_variance = self.niche_decoder(decoder_input, batch_index, *categorical_input)
-            niche_attention = None
 
         if self.niche_likelihood == "poisson":
             niche_expression = torch.distributions.Poisson(niche_variance)
@@ -429,7 +426,7 @@ class nicheVAE(VAE):
             MODULE_KEYS.PZ_KEY: pz,
             NICHEVI_MODULE_KEYS.NICHE_MEAN: niche_mean,
             NICHEVI_MODULE_KEYS.NICHE_VARIANCE: niche_variance,
-            NICHEVI_MODULE_KEYS.NICHE_ATTENTION: niche_attention,
+            # NICHEVI_MODULE_KEYS.NICHE_ATTENTION: niche_attention,
             NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION: niche_expression,
             NICHEVI_MODULE_KEYS.P_NICHE_COMPOSITION: niche_composition,
         }
