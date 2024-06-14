@@ -229,10 +229,10 @@ class NicheDecoder(nn.Module):
         # Parameters for latent distribution
         p = self.decoder(x, *cat_list)
 
-        # p_m, p_v = self.dist_decoder(p).chunk(2, dim=-1)
-        # p_v = torch.nn.Softplus()(p_v) + self.var_eps
-        p_m = self.mean_decoder(p)
-        p_v = torch.nn.Softplus()(self.var_decoder(p)) + self.var_eps
+        p_m, p_v = self.dist_decoder(p).chunk(2, dim=-1)
+        p_v = torch.nn.Softplus()(p_v) + self.var_eps
+        # p_m = self.mean_decoder(p)
+        # p_v = torch.nn.Softplus()(self.var_decoder(p)) + self.var_eps
 
         if p.ndim == 2:
             p_m = p_m.view(p_m.shape[0], self.n_niche_components, self.n_output)
