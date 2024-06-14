@@ -130,6 +130,8 @@ class nicheSCVI(
         dispersion: Literal["gene", "gene-batch", "gene-label", "gene-cell"] = "gene",
         gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
         latent_distribution: Literal["normal", "ln"] = "normal",
+        prior_mixture: bool = False,
+        prior_mixture_k: int = 20,
         **kwargs,
     ):
         super().__init__(adata)
@@ -193,6 +195,8 @@ class nicheSCVI(
                 use_size_factor_key=use_size_factor_key,
                 library_log_means=library_log_means,
                 library_log_vars=library_log_vars,
+                prior_mixture=prior_mixture,
+                prior_mixture_k=prior_mixture_k,
                 **kwargs,
             )
             self.module.minified_data_type = self.minified_data_type

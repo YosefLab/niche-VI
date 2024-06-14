@@ -166,6 +166,8 @@ class nicheVAE(VAE):
         compo_rec_weight: float = 1.0,
         n_heads: int | None = 2,
         n_hidden_dist_decoder: int | None = None,
+        prior_mixture: bool = False,
+        prior_mixture_k: int = 20,
         ##############################
         encode_covariates: bool = False,
         deeply_inject_covariates: bool = True,
@@ -220,6 +222,8 @@ class nicheVAE(VAE):
         self.n_output_niche = n_output_niche
         self.niche_likelihood = niche_likelihood
         self.n_heads = n_heads
+        self.prior_mixture = prior_mixture
+        self.prior_mixture_k = prior_mixture_k
 
         self.batch_representation = batch_representation
         if self.batch_representation == "embedding":
@@ -232,6 +236,11 @@ class nicheVAE(VAE):
         use_batch_norm_decoder = use_batch_norm == "decoder" or use_batch_norm == "both"
         use_layer_norm_encoder = use_layer_norm == "encoder" or use_layer_norm == "both"
         use_layer_norm_decoder = use_layer_norm == "decoder" or use_layer_norm == "both"
+
+        if self.prior_mixture is True:
+            self.prior_means = torch.nn.Parameter(0.01 * torch.randn([prior_mixture_k, n_latent]))
+            self.prior_log_scales = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]))
+            self.prior_logits = torch.nn.Parameter(torch.zeros([prior_mixture_k]))
 
         n_input_encoder = n_input + n_continuous_cov * encode_covariates
         if self.batch_representation == "embedding":
@@ -269,6 +278,7 @@ class nicheVAE(VAE):
                 n_output=n_output_niche,
                 n_niche_components=n_labels,
                 n_input_attention=n_heads * n_input_decoder,
+                # n_input_attention=n_input_decoder,
                 n_heads=n_heads,
                 n_cat_list=cat_list,
                 n_layers_proj=n_layers_niche,
@@ -325,7 +335,7 @@ class nicheVAE(VAE):
             Poisson,
             ZeroInflatedNegativeBinomial,
         )
-        from torch.distributions import Normal
+        from torch.distributions import Categorical, Independent, MixtureSameFamily, Normal
         from torch.nn.functional import linear
 
         # TODO: refactor forward function to not rely on y
@@ -398,7 +408,15 @@ class nicheVAE(VAE):
                 local_library_log_vars,
             ) = self._compute_local_library_params(batch_index)
             pl = Normal(local_library_log_means, local_library_log_vars.sqrt())
-        pz = Normal(torch.zeros_like(z), torch.ones_like(z))
+
+        if self.prior_mixture is True:
+            cats = Categorical(logits=self.prior_logits)
+            normal_dists = Independent(
+                Normal(self.prior_means, torch.exp(self.prior_log_scales) + 1e-4), reinterpreted_batch_ndims=1
+            )
+            pz = MixtureSameFamily(cats, normal_dists)
+        else:
+            pz = Normal(torch.zeros_like(z), torch.ones_like(z))
 
         niche_composition = self.composition_decoder(
             decoder_input, batch_index, *categorical_input
@@ -445,10 +463,33 @@ class nicheVAE(VAE):
 
         x = tensors[REGISTRY_KEYS.X_KEY]
 
-        kl_divergence_z = kl_divergence(
-            inference_outputs[MODULE_KEYS.QZ_KEY],
-            generative_outputs[MODULE_KEYS.PZ_KEY],
-        ).sum(dim=-1)
+        if self.prior_mixture is True:
+            # z = inference_outputs['qz'].rsample()
+            z = inference_outputs[MODULE_KEYS.QZ_KEY].rsample(sample_shape=(10,))  # sample multiple times, was 30
+            # sample x n_obs x n_latent
+            kl_divergence_z = -(
+                generative_outputs[MODULE_KEYS.PZ_KEY].log_prob(z)
+                - inference_outputs[MODULE_KEYS.QZ_KEY].log_prob(z).sum(-1)
+            ).mean(0)
+
+        # kl_u = "qu".log_prob("u") - "pu".log_prob('u')
+        #     kl_u = kl_u.sum(-1)
+
+        # destvi2
+        # kl_divergence_z = - (prior.log_prob(u) - qz.log_prob(u).sum(-1)).mean(0)
+
+        # mrvi
+        # kl_u = inference_outputs["qu"].log_prob(inference_outputs["u"]) - generative_outputs["pu"].log_prob(
+        #         inference_outputs["u"]
+        #     )
+        #     kl_u = kl_u.sum(-1)
+
+        else:
+            kl_divergence_z = kl_divergence(
+                inference_outputs[MODULE_KEYS.QZ_KEY],
+                generative_outputs[MODULE_KEYS.PZ_KEY],
+            ).sum(dim=-1)
+
         if not self.use_observed_lib_size:
             kl_divergence_l = kl_divergence(
                 inference_outputs[MODULE_KEYS.QL_KEY],
