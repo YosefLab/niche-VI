@@ -166,6 +166,7 @@ class nicheVAE(VAE):
         compo_rec_weight: float = 1.0,
         n_heads: int | None = 2,
         n_hidden_dist_decoder: int | None = None,
+        n_tokens_decoder: int | None = None,
         prior_mixture: bool = False,
         prior_mixture_k: int = 20,
         ##############################
@@ -224,6 +225,8 @@ class nicheVAE(VAE):
         self.n_heads = n_heads
         self.prior_mixture = prior_mixture
         self.prior_mixture_k = prior_mixture_k
+        self.n_hidden_dist_decoder = n_hidden_dist_decoder
+        self.n_tokens_decoder = n_tokens_decoder
 
         self.batch_representation = batch_representation
         if self.batch_representation == "embedding":
@@ -273,15 +276,16 @@ class nicheVAE(VAE):
         _extra_decoder_kwargs = extra_decoder_kwargs or {}
 
         if n_heads is not None:
+            n_tokens_decoder = n_heads * n_input_decoder if n_tokens_decoder is None else n_tokens_decoder
             self.niche_decoder = NicheDecoderAttention(
                 n_input=n_input_decoder,
                 n_output=n_output_niche,
                 n_niche_components=n_labels,
-                n_input_attention=n_heads * n_input_decoder,
-                # n_input_attention=n_input_decoder,
+                # n_input_attention=n_heads * n_input_decoder,
+                n_input_attention=n_tokens_decoder,
                 n_heads=n_heads,
                 n_cat_list=cat_list,
-                n_layers_proj=n_layers_niche,
+                n_layers_proj=n_layers_niche,  # TODO check
                 n_hidden_proj=n_hidden_niche,
                 n_layers=n_layers_niche,
                 n_hidden=n_hidden_niche,

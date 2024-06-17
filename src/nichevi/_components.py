@@ -268,11 +268,25 @@ class NicheDecoderAttention(nn.Module):
         self.var_eps = var_eps
 
         # Input z | batch
+        # self.z_proj = FCLayers(
+        #     n_in=n_input,
+        #     n_out=n_input_attention,
+        #     n_cat_list=n_cat_list,
+        #     n_layers=n_layers_proj,
+        #     n_hidden=n_hidden_proj,
+        #     use_activation=True,
+        #     use_batch_norm=False,
+        #     use_layer_norm=True,
+        #     dropout_rate=dropout_rate,
+        #     inject_covariates=True,
+        #     **kwargs,
+        # )
+
         self.z_proj = FCLayers(
             n_in=n_input,
-            n_out=n_input_attention,
+            n_out=n_hidden_proj,
             n_cat_list=n_cat_list,
-            n_layers=n_layers_proj,
+            n_layers=1,
             n_hidden=n_hidden_proj,
             use_activation=True,
             use_batch_norm=False,
@@ -282,9 +296,21 @@ class NicheDecoderAttention(nn.Module):
             **kwargs,
         )
 
-        self.z_proj_linear = nn.Sequential(
-            nn.Linear(n_input_attention, n_input_attention),
-            nn.LayerNorm(n_input_attention),
+        # self.z_proj_linear = nn.Sequential(
+        #     nn.Linear(n_input_attention, n_input_attention),
+        #     nn.LayerNorm(n_input_attention),
+        # )
+        self.z_proj_linear = FCLayers(
+            n_in=n_hidden_proj,
+            n_out=n_input_attention,
+            n_cat_list=None,
+            n_layers=1,
+            use_activation=False,
+            use_batch_norm=False,
+            use_layer_norm=True,
+            dropout_rate=dropout_rate,
+            inject_covariates=False,
+            **kwargs,
         )
 
         self.cell_type_embedding = nn.Embedding(
@@ -292,8 +318,8 @@ class NicheDecoderAttention(nn.Module):
             embedding_dim=n_input_attention,
         )
 
-        # might be useless
-        self.layer_norm_cell_type_embedding = nn.LayerNorm(n_input_attention)
+        # # might be useless
+        # self.layer_norm_cell_type_embedding = nn.LayerNorm(n_input_attention)
 
         # self.attention_module = nn.MultiheadAttention(
         #     embed_dim=n_input_attention,
@@ -346,14 +372,15 @@ class NicheDecoderAttention(nn.Module):
 
     def forward(self, z: torch.Tensor, *cat_list: int) -> Tuple[torch.Tensor, torch.Tensor]:
         # Project the input
-
         z_proj = self.z_proj(z, *cat_list)
         z_proj = self.z_proj_linear(z_proj)
 
-        # Embed all the cell types
-        cell_type_embedding = self.layer_norm_cell_type_embedding(
-            self.cell_type_embedding.weight
-        )  # TODO test without layer norm also
+        # # Embed all the cell types
+        # cell_type_embedding = self.layer_norm_cell_type_embedding(
+        #     self.cell_type_embedding.weight
+        # )  # TODO test without layer norm also
+
+        cell_type_embedding = self.cell_type_embedding.weight
 
         # Build the sequence of [latent,cell type embeddings]
         if z.ndim == 2:
