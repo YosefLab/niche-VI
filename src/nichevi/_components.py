@@ -284,10 +284,10 @@ class NicheDecoderAttention(nn.Module):
 
         self.z_proj = FCLayers(
             n_in=n_input,
-            n_out=n_hidden_proj,
+            n_out=n_input_attention,
             n_cat_list=n_cat_list,
             n_layers=1,
-            n_hidden=n_hidden_proj,
+            # n_hidden=n_hidden_proj,
             use_activation=True,
             use_batch_norm=False,
             use_layer_norm=True,
@@ -296,22 +296,22 @@ class NicheDecoderAttention(nn.Module):
             **kwargs,
         )
 
-        # self.z_proj_linear = nn.Sequential(
-        #     nn.Linear(n_input_attention, n_input_attention),
-        #     nn.LayerNorm(n_input_attention),
-        # )
-        self.z_proj_linear = FCLayers(
-            n_in=n_hidden_proj,
-            n_out=n_input_attention,
-            n_cat_list=None,
-            n_layers=1,
-            use_activation=False,
-            use_batch_norm=False,
-            use_layer_norm=True,
-            dropout_rate=dropout_rate,
-            inject_covariates=False,
-            **kwargs,
+        self.z_proj_linear = nn.Sequential(
+            nn.Linear(n_input_attention, n_input_attention),
+            nn.LayerNorm(n_input_attention),
         )
+        # self.z_proj_linear = FCLayers(
+        #     n_in=n_hidden_proj,
+        #     n_out=n_input_attention,
+        #     n_cat_list=None,
+        #     n_layers=1,
+        #     use_activation=False,
+        #     use_batch_norm=False,
+        #     use_layer_norm=True,
+        #     dropout_rate=dropout_rate,
+        #     inject_covariates=False,
+        #     **kwargs,
+        # )
 
         self.cell_type_embedding = nn.Embedding(
             num_embeddings=n_niche_components,
@@ -321,29 +321,6 @@ class NicheDecoderAttention(nn.Module):
         # # might be useless
         # self.layer_norm_cell_type_embedding = nn.LayerNorm(n_input_attention)
 
-        # self.attention_module = nn.MultiheadAttention(
-        #     embed_dim=n_input_attention,
-        #     num_heads=n_heads,
-        #     dropout=dropout_rate,
-        #     batch_first=True,
-        # )
-
-        # self.layer_norm_attention_module = nn.LayerNorm(n_input_attention)
-
-        # self.decoder = FCLayers(
-        #     n_in=n_input_attention,
-        #     n_cat_list=None,
-        #     n_out=n_input_attention,
-        #     n_layers=n_layers,
-        #     n_hidden=n_hidden,
-        #     dropout_rate=dropout_rate,
-        #     use_activation=True,
-        #     use_batch_norm=False,
-        #     use_layer_norm=False,
-        #     **kwargs,
-        # )
-
-        # self.layer_norm_decoder = nn.LayerNorm(n_input_attention)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=n_input_attention, nhead=n_heads, dim_feedforward=n_hidden, dropout=dropout_rate, batch_first=True
         )
@@ -392,21 +369,6 @@ class NicheDecoderAttention(nn.Module):
             cell_type_embedding = cell_type_embedding.expand(z_proj.size(0), z_proj.size(1), -1, -1)
             qkv = torch.cat([z_proj, cell_type_embedding], dim=2)
             qkv = qkv.view(-1, qkv.size(2), qkv.size(3))
-
-        # # Apply the attention mechanism
-        # attention_output, _ = self.attention_module(qkv, qkv, qkv)
-
-        # # Apply layer norm
-        # attention_output = self.layer_norm_attention_module(attention_output + qkv)
-
-        # if z.ndim == 3:
-        #     attention_output = attention_output.view(z_proj.size(0), z_proj.size(1), -1, z_proj.size(3))
-
-        # # Decode the attention output
-        # decoded = self.decoder(attention_output)
-
-        # # Apply layer norm
-        # p = self.layer_norm_decoder(decoded + attention_output)
 
         p = self.transformer_encoder(qkv)
 
