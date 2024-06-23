@@ -17,7 +17,7 @@ from scvi.module.base import (
 from scvi.nn import one_hot
 from torch.distributions import Distribution
 
-from ._components import DirichletDecoder, Encoder, NicheDecoder, NicheDecoderAttention
+from ._components import DirichletDecoder, Encoder, NicheDecoder, NicheDecoderAttention, NicheDecoderConditional
 from ._constants import NICHEVI_MODULE_KEYS, NICHEVI_REGISTRY_KEYS
 
 logger = logging.getLogger(__name__)
@@ -276,19 +276,35 @@ class nicheVAE(VAE):
         _extra_decoder_kwargs = extra_decoder_kwargs or {}
 
         if n_heads is not None:
-            n_tokens_decoder = n_heads * n_input_decoder if n_tokens_decoder is None else n_tokens_decoder
-            self.niche_decoder = NicheDecoderAttention(
+            n_tokens_decoder = n_input_decoder if n_tokens_decoder is None else n_tokens_decoder
+            # self.niche_decoder = NicheDecoderAttention(
+            #     n_input=n_input_decoder,
+            #     n_output=n_output_niche,
+            #     n_niche_components=n_labels,
+            #     # n_input_attention=n_heads * n_input_decoder,
+            #     n_input_attention=n_tokens_decoder,
+            #     n_heads=n_heads,
+            #     n_cat_list=cat_list,
+            #     n_layers_proj=n_layers_niche,  # TODO check
+            #     n_hidden_proj=n_hidden_niche,
+            #     n_layers=n_layers_niche,
+            #     n_hidden=n_hidden_niche,
+            #     dropout_rate=dropout_rate,
+            #     n_hidden_dist_decoder=n_hidden_dist_decoder,
+            #     **_extra_decoder_kwargs,
+            # )
+
+            self.niche_decoder = NicheDecoderConditional(
                 n_input=n_input_decoder,
                 n_output=n_output_niche,
                 n_niche_components=n_labels,
-                # n_input_attention=n_heads * n_input_decoder,
-                n_input_attention=n_tokens_decoder,
-                n_heads=n_heads,
+                n_label_embed=n_tokens_decoder,
                 n_cat_list=cat_list,
-                n_layers_proj=n_layers_niche,  # TODO check
-                n_hidden_proj=n_hidden_niche,
                 n_layers=n_layers_niche,
                 n_hidden=n_hidden_niche,
+                inject_covariates=deeply_inject_covariates,
+                use_batch_norm=use_batch_norm_decoder,
+                use_layer_norm=use_layer_norm_decoder,
                 dropout_rate=dropout_rate,
                 n_hidden_dist_decoder=n_hidden_dist_decoder,
                 **_extra_decoder_kwargs,

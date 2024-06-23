@@ -378,3 +378,121 @@ class NicheDecoderAttention(nn.Module):
         p_v = torch.nn.Softplus()(p_v) + self.var_eps
 
         return p_m, p_v
+
+
+class NicheDecoderConditional(nn.Module):
+    def __init__(
+        self,
+        n_input: int,
+        n_output: int,
+        n_niche_components: int,
+        n_label_embed: int,
+        n_cat_list: Iterable[int] = None,
+        n_layers: int = 1,
+        n_hidden: int = 128,
+        dropout_rate: float = 0.1,
+        var_eps=1e-4,
+        n_hidden_dist_decoder: int | None = None,
+        use_batch_norm: bool = False,
+        use_layer_norm: bool = True,
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.var_eps = var_eps
+        self.n_niche_components = n_niche_components
+
+        self.z_proj = FCLayers(
+            n_in=n_input,
+            n_out=n_label_embed,
+            n_cat_list=n_cat_list,
+            n_layers=1,
+            use_activation=True,
+            use_batch_norm=use_batch_norm,
+            use_layer_norm=use_layer_norm,
+            dropout_rate=dropout_rate,
+            **kwargs,
+        )
+
+        self.z_proj_linear = FCLayers(
+            n_in=n_label_embed,
+            n_out=n_label_embed,
+            n_cat_list=None,
+            n_layers=1,
+            use_activation=False,
+            use_batch_norm=use_batch_norm,
+            use_layer_norm=use_layer_norm,
+            dropout_rate=dropout_rate,
+            **kwargs,
+        )
+
+        self.cell_type_embedding = nn.Embedding(
+            num_embeddings=n_niche_components,
+            embedding_dim=n_label_embed,
+        )
+
+        self.decoder = FCLayers(
+            n_in=2 * n_label_embed,
+            n_hidden=n_hidden,
+            n_out=n_output,
+            n_cat_list=None,
+            n_layers=n_layers,
+            dropout_rate=dropout_rate,
+            use_batch_norm=use_batch_norm,
+            use_layer_norm=use_layer_norm,
+            **kwargs,
+        )
+
+        if n_hidden_dist_decoder:
+            self.hidden_dist_decoder = FCLayers(
+                n_in=n_label_embed,
+                n_cat_list=None,
+                n_out=n_hidden_dist_decoder,
+                n_layers=1,
+                n_hidden=n_hidden_dist_decoder,
+                dropout_rate=dropout_rate,
+                use_batch_norm=use_batch_norm,
+                use_layer_norm=use_layer_norm,
+                **kwargs,
+            )
+
+            self.dist_decoder = nn.Sequential(
+                self.hidden_dist_decoder,
+                nn.Linear(n_hidden_dist_decoder, 2 * n_output),
+            )
+        else:
+            self.dist_decoder = nn.Linear(n_output, 2 * n_output)
+
+    def forward(self, z: torch.Tensor, *cat_list: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Project the input
+        z_proj = self.z_proj(z, *cat_list)
+        z_proj = self.z_proj_linear(z_proj)
+
+        cell_type_embedding = self.cell_type_embedding.weight
+
+        # build a sequence = [z|ct1, z|ct2, ...] that are the input of the MLP. ie of shape (n_batch, n_niche_components, n_input + n_label_embed) so that the output is of shape (n_batch, n_niche_components, n_output)
+
+        if z.ndim == 2:
+            z_proj = z_proj.unsqueeze(1)  # B x Latent -> B x 1 x Latent
+            cell_type_embedding = cell_type_embedding.expand(z.size(0), -1, -1)  # B x C x Tokens
+
+            z_proj = z_proj.expand(-1, self.n_niche_components, -1)  # B x C x Latent
+            qkv = torch.cat([z_proj, cell_type_embedding], dim=-1)  # B x C x (Latent + Tokens)
+
+        elif z.ndim == 3:
+            z_proj = z_proj.unsqueeze(2)  # Sample x B x Latent -> Sample x B x 1 x Latent
+            z_proj = z_proj.expand(-1, -1, self.n_niche_components, -1)  # Sample x B x C x Latent
+            cell_type_embedding = cell_type_embedding.expand(
+                z_proj.size(0), z_proj.size(1), -1, -1
+            )  # Sample x B x C x Tokens
+            qkv = torch.cat([z_proj, cell_type_embedding], dim=-1)  # Sample x B x C x (Latent + Tokens)
+            qkv = qkv.view(
+                -1, qkv.size(2), qkv.size(3)
+            )  # Sample x B x C x (Latent + Tokens) -> (Sample x B) x C x (Latent + Tokens)
+
+        p_ct = self.decoder(qkv)
+
+        p_m, p_v = self.dist_decoder(p_ct).chunk(2, dim=-1)
+        p_v = torch.nn.Softplus()(p_v) + self.var_eps
+
+        return p_m, p_v

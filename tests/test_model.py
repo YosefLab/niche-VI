@@ -2,64 +2,18 @@ import numpy as np
 
 # import pytest
 from scvi.data import _constants, synthetic_iid
-from scvi.data._compat import LEGACY_REGISTRY_KEY_MAP, registry_from_setup_dict
 from scvi.model.utils import mde
 
 from nichevi import nicheSCVI
-from nichevi.differential_expression import _dummy_adata
-
-LEGACY_REGISTRY_KEYS = set(LEGACY_REGISTRY_KEY_MAP.values())
-LEGACY_SETUP_DICT = {
-    "scvi_version": "0.0.0",
-    "categorical_mappings": {
-        "_scvi_batch": {
-            "original_key": "testbatch",
-            "mapping": np.array(["batch_0", "batch_1"], dtype=object),
-        },
-        "_scvi_labels": {
-            "original_key": "testlabels",
-            "mapping": np.array(["label_0", "label_1", "label_2"], dtype=object),
-        },
-    },
-    "extra_categoricals": {
-        "mappings": {
-            "cat1": np.array([0, 1, 2, 3, 4]),
-            "cat2": np.array([0, 1, 2, 3, 4]),
-        },
-        "keys": ["cat1", "cat2"],
-        "n_cats_per_key": [5, 5],
-    },
-    "extra_continuous_keys": np.array(["cont1", "cont2"], dtype=object),
-    "data_registry": {
-        "X": {"attr_name": "X", "attr_key": None},
-        "batch_indices": {"attr_name": "obs", "attr_key": "_scvi_batch"},
-        "labels": {"attr_name": "obs", "attr_key": "_scvi_labels"},
-        "cat_covs": {
-            "attr_name": "obsm",
-            "attr_key": "_scvi_extra_categoricals",
-        },
-        "cont_covs": {
-            "attr_name": "obsm",
-            "attr_key": "_scvi_extra_continuous",
-        },
-    },
-    "summary_stats": {
-        "n_batch": 2,
-        "n_cells": 400,
-        "n_vars": 100,
-        "n_labels": 3,
-        "n_proteins": 0,
-        "n_continuous_covs": 2,
-    },
-}
-
 
 N_LAYERS = 1
-N_LATENT = 10
+N_LATENT = 15
 LIKELIHOOD = "nb"
 K_NN = 5
 N_HEADS = 3
 N_EPOCHS_NICHEVI = 1
+N_TOKENS = 10
+USE_BATCH_NORM = True
 
 
 def test_nichevi():
@@ -77,7 +31,7 @@ def test_nichevi():
     )
 
     adata.obsm["qz1_m"] = np.random.normal(size=(adata.shape[0], N_LATENT))
-    adata.obsm["qz1_m"] = adata.X.copy()
+    # adata.obsm["qz1_m"] = adata.X.copy()
     adata.layers["counts"] = adata.X.copy()
 
     setup_kwargs = {
@@ -130,13 +84,14 @@ def test_nichevi():
         gene_likelihood=LIKELIHOOD,
         n_layers=N_LAYERS,
         n_heads=N_HEADS,
-        n_layers_niche=1,
+        n_tokens_decoder=N_TOKENS,
+        n_layers_niche=2,
         n_layers_compo=1,
         n_hidden_niche=48,
         n_hidden_compo=48,
         n_latent=N_LATENT,
-        use_batch_norm="both",
-        use_layer_norm="none",
+        use_batch_norm="both" if USE_BATCH_NORM else "none",
+        use_layer_norm="none" if USE_BATCH_NORM else "both",
     )
 
     nichevae.train(
@@ -167,18 +122,6 @@ def test_nichevi():
     # nichevae.predict_neighborhood()  # specific to nicheSCVI
     # nichevae.predict_niche_activation()  # specific to nicheSCVI
 
-    adata_manager = nichevae.get_anndata_manager(adata, required=True)
-
-    dummy_adata = _dummy_adata(
-        adata_manager,
-        groupby="labels",
-        group1="label_1",
-        group2="label_2",
-        radius=None,
-        k_nn=7,
-        count_corruption=0.1,
-    )
-
     nichevae.differential_expression(
         groupby="labels",
         group1="label_1",
@@ -189,7 +132,7 @@ def test_nichevi():
         # label_key="labels",
         radius=None,
         k_nn=5,
-        count_corruption=0.1,
+        count_corruption=None,
     )
     nichevae.differential_expression(
         groupby="labels",
