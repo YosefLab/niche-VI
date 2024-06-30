@@ -94,8 +94,6 @@ def _niche_de_core(
             "corrupted1_group2": [],
         }
     )
-    # if group2 is not None:
-    #     DE_results["group1_niche2"] = []
 
     dc = DifferentialComputation(model_fn, representation_fn, adata_manager)
     for g1 in track(
@@ -109,17 +107,6 @@ def _niche_de_core(
         if count_corruption is not None:
             x_uncorr = adata.layers["counts"][cell_idx1]
             x_niche1 = A[cell_idx1] @ adata.layers["counts"]
-
-            # x_uncorr_sum = x_uncorr.sum(axis=1)
-            # x_niche1_sum = x_niche1.sum(axis=1)
-            # corruption_weights = np.divide(
-            #     count_corruption * x_uncorr_sum,
-            #     x_niche1_sum,
-            #     out=np.zeros_like(x_niche1_sum, dtype=float),
-            #     where=x_niche1_sum != 0,
-            # )
-            # x_corr = x_niche1.multiply(corruption_weights)
-            # x_corr = x_uncorr + x_corr.ceil().astype(int)  # TODO by random
 
             x_corr = corrupt_counts(x_uncorr, x_niche1, target_corruption=count_corruption, rounding="random")
 
@@ -136,14 +123,17 @@ def _niche_de_core(
         if group2 is None:
             cell_idx2 = ~cell_idx1
             # neighbors_idx2 = None
+
             DE_indices = (
                 {
                     "group1_group2": [cell_idx1, cell_idx2],
                     "group1_corrupted1": [cell_idx1, neighbors_idx1],
+                    "corrupted1_group2": [neighbors_idx1, cell_idx2],
                 }
                 if count_corruption
                 else {
                     "group1_group2": [cell_idx1, cell_idx2],
+                    "group1_niche1": [cell_idx1, neighbors_idx1],
                     "niche1_group2": [neighbors_idx1, cell_idx2],
                 }
             )
@@ -151,10 +141,12 @@ def _niche_de_core(
                 {
                     "group1_group2": [g1, "Rest"],
                     "group1_corrupted1": [g1, f"{g1}_corrupted"],
+                    "corrupted1_group2": [f"{g1}_corrupted", "Rest"],
                 }
                 if count_corruption
                 else {
                     "group1_group2": [g1, "Rest"],
+                    "group1_niche1": [g1, f"{g1}_neighbors"],
                     "niche1_group2": [f"{g1}_neighbors", "Rest"],
                 }
             )
@@ -232,6 +224,9 @@ def _niche_de_core(
 
     DE_results["group1_group2"] = pd.concat(DE_results["group1_group2"], axis=0)
     idx_g1_g2 = DE_results["group1_group2"].index
+
+    if group2 is None:
+        group2 = "Rest"
 
     for groups in list(DE_results.keys())[1:]:
         group_DE_result = DE_results[groups]
