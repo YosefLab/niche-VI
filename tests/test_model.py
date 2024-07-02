@@ -10,10 +10,10 @@ N_LAYERS = 1
 N_LATENT = 15
 LIKELIHOOD = "nb"
 K_NN = 5
-N_HEADS = 3
-N_EPOCHS_NICHEVI = 1
+N_HEADS = None
+N_EPOCHS_NICHEVI = 2
 N_TOKENS = 10
-USE_BATCH_NORM = True
+USE_BATCH_NORM = False
 
 
 def test_nichevi():
@@ -92,6 +92,11 @@ def test_nichevi():
         n_latent=N_LATENT,
         use_batch_norm="both" if USE_BATCH_NORM else "none",
         use_layer_norm="none" if USE_BATCH_NORM else "both",
+        ###
+        prior_mixture=True,
+        # prior_mixture_k = 20,
+        semisupervised = True,
+        linear_classifier = True,
     )
 
     nichevae.train(

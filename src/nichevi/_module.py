@@ -607,6 +607,9 @@ class nicheVAE(VAE):
         return LossOutput(
             loss=loss,
             reconstruction_loss=reconst_loss_cell,
+            classification_loss=classification_loss.mean() if self.semisupervised else None,
+            true_labels=y if self.semisupervised else None,
+            logits=y_ct if self.semisupervised else None,
             kl_local={
                 MODULE_KEYS.KL_L_KEY: kl_divergence_l,
                 MODULE_KEYS.KL_Z_KEY: kl_divergence_z,
@@ -615,5 +618,6 @@ class nicheVAE(VAE):
                 NICHEVI_MODULE_KEYS.NLL_NICHE_COMPOSITION_KEY: torch.mean(composition_loss),
                 NICHEVI_MODULE_KEYS.NLL_NICHE_EXPRESSION_KEY: torch.mean(masked_reconst_loss_niche),
                 NICHEVI_MODULE_KEYS.SPATIAL_WEIGHT_KEY: spatial_weight,
+                "classification_loss": torch.mean(classification_loss) if self.semisupervised else None,
             },
         )
