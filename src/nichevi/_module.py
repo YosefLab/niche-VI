@@ -467,16 +467,34 @@ class nicheVAE(VAE):
             pl = Normal(local_library_log_means, local_library_log_vars.sqrt())
 
         if self.prior_mixture is True:
-            cats = Categorical(logits=self.prior_logits)
-            normal_dists = Independent(
-                Normal(self.prior_means, torch.exp(self.prior_log_scales) + 1e-4), reinterpreted_batch_ndims=1
-            )
+            u_prior_logits = self.prior_logits
+            u_prior_means = self.prior_means
+            u_prior_scales = torch.exp(self.prior_log_scales) + 1e-4
+
+            if self.semisupervised:
+                logits_input = (
+                    torch.stack(
+                        [
+                            torch.nn.functional.one_hot(y_i, self.n_labels)
+                            if y_i < self.n_labels
+                            else torch.zeros(self.n_labels)
+                            for y_i in y.ravel()
+                        ]
+                    )
+                    .to(z.device)
+                    .float()
+                )
+                u_prior_logits = u_prior_logits + 10 * logits_input
+                u_prior_means = u_prior_means.expand(y.shape[0], -1, -1)
+                u_prior_scales = u_prior_scales.expand(y.shape[0], -1, -1)
+            cats = Categorical(logits=u_prior_logits)
+            normal_dists = Independent(Normal(u_prior_means, u_prior_scales), reinterpreted_batch_ndims=1)
             pz = MixtureSameFamily(cats, normal_dists)
         else:
             pz = Normal(torch.zeros_like(z), torch.ones_like(z))
 
-        if self.semisupervised:
-            y_ct = self.classifier(z)
+        # if self.semisupervised:
+        #     y_ct = self.classifier(z)
 
         niche_composition = self.composition_decoder(
             decoder_input, batch_index, *categorical_input
@@ -507,7 +525,7 @@ class nicheVAE(VAE):
             # NICHEVI_MODULE_KEYS.NICHE_ATTENTION: niche_attention,
             NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION: niche_expression,
             NICHEVI_MODULE_KEYS.P_NICHE_COMPOSITION: niche_composition,
-            "y_ct": y_ct if self.semisupervised else None,
+            # "y_ct": y_ct if self.semisupervised else None,
         }
 
     def loss(
@@ -517,7 +535,7 @@ class nicheVAE(VAE):
         generative_outputs: dict[str, torch.Tensor | Distribution | None],
         kl_weight: float = 1.0,
         spatial_weight: float = 1.0,
-        classification_ratio=5.0,
+        classification_ratio=20,
         epsilon: float = 1e-6,
     ) -> LossOutput:
         """Compute the loss."""
@@ -526,12 +544,14 @@ class nicheVAE(VAE):
         x = tensors[REGISTRY_KEYS.X_KEY]
         if self.semisupervised:
             y = tensors[REGISTRY_KEYS.LABELS_KEY].ravel().long()
-            y_ct = generative_outputs["y_ct"]
+            z_mean = inference_outputs[MODULE_KEYS.QZ_KEY].loc
+            y_ct = self.classifier(z_mean)
+            # y_ct = generative_outputs["y_ct"]
             classification_loss = torch.nn.functional.cross_entropy(y_ct, y, reduction="none")
 
         if self.prior_mixture is True:
             # z = inference_outputs['qz'].rsample()
-            z = inference_outputs[MODULE_KEYS.QZ_KEY].rsample(sample_shape=(10,))  # sample multiple times, was 30
+            z = inference_outputs[MODULE_KEYS.QZ_KEY].rsample(sample_shape=(30,))  # sample multiple times
             # sample x n_obs x n_latent
             kl_divergence_z = -(
                 generative_outputs[MODULE_KEYS.PZ_KEY].log_prob(z)
