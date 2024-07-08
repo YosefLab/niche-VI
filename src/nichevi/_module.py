@@ -537,6 +537,7 @@ class nicheVAE(VAE):
         spatial_weight: float = 1.0,
         classification_ratio=20,
         epsilon: float = 1e-6,
+        n_samples_mixture: int = 30,
     ) -> LossOutput:
         """Compute the loss."""
         from torch.distributions import kl_divergence
@@ -551,11 +552,13 @@ class nicheVAE(VAE):
 
         if self.prior_mixture is True:
             # z = inference_outputs['qz'].rsample()
-            z = inference_outputs[MODULE_KEYS.QZ_KEY].rsample(sample_shape=(30,))  # sample multiple times
+            z = inference_outputs[MODULE_KEYS.QZ_KEY].rsample(
+                sample_shape=(n_samples_mixture,)
+            )  # sample multiple times
             # sample x n_obs x n_latent
-            kl_divergence_z = -(
-                generative_outputs[MODULE_KEYS.PZ_KEY].log_prob(z)
-                - inference_outputs[MODULE_KEYS.QZ_KEY].log_prob(z).sum(-1)
+            kl_divergence_z = (
+                inference_outputs[MODULE_KEYS.QZ_KEY].log_prob(z).sum(-1)
+                - generative_outputs[MODULE_KEYS.PZ_KEY].log_prob(z)
             ).mean(0)
 
         # kl_u = "qu".log_prob("u") - "pu".log_prob('u')
@@ -569,6 +572,7 @@ class nicheVAE(VAE):
         #         inference_outputs["u"]
         #     )
         #     kl_u = kl_u.sum(-1)
+        # kl_divergence_z = (qz.log_prob(u).sum(-1) - prior.log_prob(u)).mean(0)
 
         else:
             kl_divergence_z = kl_divergence(
