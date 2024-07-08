@@ -13,10 +13,10 @@ import numpy as np
 # import optax
 # import pyro
 import torch
-
-# import torchmetrics.functional as tmf
+import torchmetrics.functional as tmf
 from lightning.pytorch.strategies.ddp import DDPStrategy
 
+# from scvi import METRIC_KEYS
 # from scvi import REGISTRY_KEYS
 # from scvi.module import Classifier
 from scvi.module.base import (
@@ -28,11 +28,11 @@ from scvi.module.base import (
 # PyroBaseModuleClass,
 # TrainStateWithState,
 from scvi.nn import one_hot
+from scvi.train._constants import METRIC_KEYS
 
 # from pyro.nn import PyroModule
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-# from scvi.train._constants import METRIC_KEYS
 from ._metrics import ElboMetric
 
 # JaxOptimizerCreator = Callable[[], optax.GradientTransformation]
@@ -69,9 +69,7 @@ def _compute_kl_weight(
         Minimum scaling factor on KL divergence during training.
     """
     if min_kl_weight > max_kl_weight:
-        raise ValueError(
-            f"min_kl_weight={min_kl_weight} is larger than max_kl_weight={max_kl_weight}."
-        )
+        raise ValueError(f"min_kl_weight={min_kl_weight} is larger than max_kl_weight={max_kl_weight}.")
 
     slope = max_kl_weight - min_kl_weight
     if n_epochs_kl_warmup:
@@ -116,9 +114,7 @@ def _compute_spatial_weight(
         Minimum scaling factor on KL divergence during training.
     """
     if min_spatial_weight > max_spatial_weight:
-        raise ValueError(
-            f"min_kl_weight={min_spatial_weight} is larger than max_kl_weight={max_spatial_weight}."
-        )
+        raise ValueError(f"min_kl_weight={min_spatial_weight} is larger than max_kl_weight={max_spatial_weight}.")
 
     slope = max_spatial_weight - min_spatial_weight
     if n_epochs_spatial_warmup:
@@ -126,19 +122,13 @@ def _compute_spatial_weight(
             return min_spatial_weight
 
         if spatial_start <= epoch < n_epochs_spatial_warmup + spatial_start:
-            return (
-                slope * ((epoch - spatial_start) / n_epochs_spatial_warmup)
-                + min_spatial_weight
-            )
+            return slope * ((epoch - spatial_start) / n_epochs_spatial_warmup) + min_spatial_weight
     elif n_steps_spatial_warmup:
         if step < spatial_start:
             return min_spatial_weight
 
         if spatial_start <= step < n_steps_spatial_warmup + spatial_start:
-            return (
-                slope * ((step - spatial_start) / n_steps_spatial_warmup)
-                + min_spatial_weight
-            )
+            return slope * ((step - spatial_start) / n_steps_spatial_warmup) + min_spatial_weight
 
     return max_spatial_weight
 
@@ -208,6 +198,7 @@ class TrainingPlan(pl.LightningModule):
         self,
         module: BaseModuleClass,
         *,
+        n_classes: int,
         optimizer: Literal["Adam", "AdamW", "Custom"] = "Adam",
         optimizer_creator: Optional[TorchOptimizerCreator] = None,
         lr: float = 1e-3,
@@ -242,6 +233,7 @@ class TrainingPlan(pl.LightningModule):
         self.optimizer_name = optimizer
         self.n_steps_kl_warmup = n_steps_kl_warmup
         self.n_epochs_kl_warmup = n_epochs_kl_warmup
+        self.n_classes = n_classes
         ########################################
         self.n_steps_spatial_warmup = n_steps_spatial_warmup
         self.n_epochs_spatial_warmup = n_epochs_spatial_warmup
@@ -261,9 +253,7 @@ class TrainingPlan(pl.LightningModule):
         self.optimizer_creator = optimizer_creator
 
         if self.optimizer_name == "Custom" and self.optimizer_creator is None:
-            raise ValueError(
-                "If optimizer is 'Custom', `optimizer_creator` must be provided."
-            )
+            raise ValueError("If optimizer is 'Custom', `optimizer_creator` must be provided.")
 
         self._n_obs_training = None
         self._n_obs_validation = None
@@ -289,9 +279,7 @@ class TrainingPlan(pl.LightningModule):
         n = 1 if n_total is None or n_total < 1 else n_total
         elbo = rec_loss + kl_local + (1 / n) * kl_global
         elbo.name = f"elbo_{mode}"
-        collection = OrderedDict(
-            [(metric.name, metric) for metric in [elbo, rec_loss, kl_local, kl_global]]
-        )
+        collection = OrderedDict([(metric.name, metric) for metric in [elbo, rec_loss, kl_local, kl_global]])
         return elbo, rec_loss, kl_local, kl_global, collection
 
     def initialize_train_metrics(self):
@@ -302,9 +290,7 @@ class TrainingPlan(pl.LightningModule):
             self.kl_local_train,
             self.kl_global_train,
             self.train_metrics,
-        ) = self._create_elbo_metric_components(
-            mode="train", n_total=self.n_obs_training
-        )
+        ) = self._create_elbo_metric_components(mode="train", n_total=self.n_obs_training)
         self.elbo_train.reset()
 
     def initialize_val_metrics(self):
@@ -315,9 +301,7 @@ class TrainingPlan(pl.LightningModule):
             self.kl_local_val,
             self.kl_global_val,
             self.val_metrics,
-        ) = self._create_elbo_metric_components(
-            mode="validation", n_total=self.n_obs_validation
-        )
+        ) = self._create_elbo_metric_components(mode="validation", n_total=self.n_obs_validation)
         self.elbo_val.reset()
 
     @property
@@ -363,6 +347,11 @@ class TrainingPlan(pl.LightningModule):
     def forward(self, *args, **kwargs):
         """Passthrough to the module's forward method."""
         return self.module(*args, **kwargs)
+
+    def log_with_mode(self, key: str, value: Any, mode: str, **kwargs):
+        """Log with mode."""
+        # TODO: Include this with a base training plan
+        self.log(f"{mode}_{key}", value, **kwargs)
 
     @torch.inference_mode()
     def compute_and_log_metrics(
@@ -422,6 +411,62 @@ class TrainingPlan(pl.LightningModule):
                 sync_dist=self.use_sync_dist,
             )
 
+        classification_loss = loss_output.classification_loss
+        true_labels = loss_output.true_labels.squeeze()
+        logits = loss_output.logits
+        predicted_labels = torch.argmax(logits, dim=-1)
+
+        accuracy = tmf.classification.multiclass_accuracy(
+            predicted_labels,
+            true_labels,
+            self.n_classes,
+            average="micro",
+        )
+        f1 = tmf.classification.multiclass_f1_score(
+            predicted_labels,
+            true_labels,
+            self.n_classes,
+            average="micro",
+        )
+        ce = tmf.classification.multiclass_calibration_error(
+            logits,
+            true_labels,
+            self.n_classes,
+        )
+
+        self.log_with_mode(
+            METRIC_KEYS.CLASSIFICATION_LOSS_KEY,
+            classification_loss,
+            mode,
+            on_step=False,
+            on_epoch=True,
+            batch_size=loss_output.n_obs_minibatch,
+        )
+        self.log_with_mode(
+            METRIC_KEYS.ACCURACY_KEY,
+            accuracy,
+            mode,
+            on_step=False,
+            on_epoch=True,
+            batch_size=loss_output.n_obs_minibatch,
+        )
+        self.log_with_mode(
+            METRIC_KEYS.F1_SCORE_KEY,
+            f1,
+            mode,
+            on_step=False,
+            on_epoch=True,
+            batch_size=loss_output.n_obs_minibatch,
+        )
+        self.log_with_mode(
+            METRIC_KEYS.CALIBRATION_ERROR_KEY,
+            ce,
+            mode,
+            on_step=False,
+            on_epoch=True,
+            batch_size=loss_output.n_obs_minibatch,
+        )
+
     def training_step(self, batch, batch_idx):
         """Training step for the model."""
         if "kl_weight" in self.loss_kwargs:
@@ -459,16 +504,12 @@ class TrainingPlan(pl.LightningModule):
         )
         self.compute_and_log_metrics(scvi_loss, self.val_metrics, "validation")
 
-    def _optimizer_creator_fn(
-        self, optimizer_cls: Union[torch.optim.Adam, torch.optim.AdamW]
-    ):
+    def _optimizer_creator_fn(self, optimizer_cls: Union[torch.optim.Adam, torch.optim.AdamW]):
         """Create optimizer for the model.
 
         This type of function can be passed as the `optimizer_creator`
         """
-        return lambda params: optimizer_cls(
-            params, lr=self.lr, eps=self.eps, weight_decay=self.weight_decay
-        )
+        return lambda params: optimizer_cls(params, lr=self.lr, eps=self.eps, weight_decay=self.weight_decay)
 
     def get_optimizer_creator(self):
         """Get optimizer creator for the model."""

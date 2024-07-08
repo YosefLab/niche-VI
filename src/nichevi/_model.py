@@ -134,6 +134,9 @@ class nicheSCVI(
     ):
         super().__init__(adata)
 
+
+        self.n_labels = self.summary_stats.n_labels
+
         self._module_kwargs = {
             "n_hidden": n_hidden,
             "n_latent": n_latent,
