@@ -642,6 +642,5 @@ class nicheVAE(VAE):
                 NICHEVI_MODULE_KEYS.NLL_NICHE_COMPOSITION_KEY: torch.mean(composition_loss),
                 NICHEVI_MODULE_KEYS.NLL_NICHE_EXPRESSION_KEY: torch.mean(masked_reconst_loss_niche),
                 NICHEVI_MODULE_KEYS.SPATIAL_WEIGHT_KEY: spatial_weight,
-                "classification_loss": torch.mean(classification_loss) if self.semisupervised else None,
             },
         )
