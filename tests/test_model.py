@@ -2,7 +2,6 @@ import numpy as np
 
 # import pytest
 from scvi.data import _constants, synthetic_iid
-from scvi.model.utils import mde
 
 from nichevi import nicheSCVI
 
@@ -95,8 +94,8 @@ def test_nichevi():
         ###
         prior_mixture=True,
         # prior_mixture_k = 20,
-        semisupervised = True,
-        linear_classifier = True,
+        semisupervised=True,
+        linear_classifier=True,
     )
 
     nichevae.train(
@@ -122,9 +121,10 @@ def test_nichevi():
     print("Finished training")
 
     nichevae.get_elbo(indices=nichevae.validation_indices)
-    # nichevae.get_normalized_expression()
-    # nichevae.get_latent_representation()
-    # nichevae.predict_neighborhood()  # specific to nicheSCVI
+    # nichevae.get_elbo()
+    nichevae.get_normalized_expression()
+    nichevae.get_latent_representation()
+    nichevae.predict_neighborhood()  # specific to nicheSCVI
     # nichevae.predict_niche_activation()  # specific to nicheSCVI
 
     nichevae.differential_expression(

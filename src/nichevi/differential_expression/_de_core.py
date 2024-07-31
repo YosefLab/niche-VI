@@ -7,7 +7,7 @@ from scipy.sparse import csr_matrix
 from scvi import REGISTRY_KEYS
 
 # from scvi.model.base._differential import DifferentialComputation
-from scvi.model.base._utils import _fdr_de_prediction, _prepare_obs
+from scvi.model.base._de_core import _fdr_de_prediction, _prepare_obs
 from scvi.utils import track
 
 from nichevi import NICHEVI_REGISTRY_KEYS

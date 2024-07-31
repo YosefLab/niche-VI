@@ -586,7 +586,7 @@ class nicheVAE(VAE):
                 generative_outputs[MODULE_KEYS.PL_KEY],
             ).sum(dim=1)
         else:
-            kl_divergence_l = torch.tensor(0.0, device=x.device)
+            kl_divergence_l = torch.zeros_like(kl_divergence_z)
 
         reconst_loss_cell = -generative_outputs[MODULE_KEYS.PX_KEY].log_prob(x).sum(-1)
 
