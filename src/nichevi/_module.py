@@ -11,13 +11,14 @@ from scvi.module._constants import MODULE_KEYS
 from scvi.module.base import (
     # BaseMinifiedModeModuleClass,
     # EmbeddingModuleMixin,
-    LossOutput,
+    # LossOutput,
     auto_move_data,
 )
 from scvi.nn import one_hot
 from torch.distributions import Distribution
 
-from ._components import DirichletDecoder, Encoder, NicheDecoder, NicheDecoderAttention, NicheDecoderConditional
+from ._base_module import NicheLossOutput
+from ._components import DirichletDecoder, Encoder, NicheDecoder, NicheDecoderConditional
 from ._constants import NICHEVI_MODULE_KEYS, NICHEVI_REGISTRY_KEYS
 
 logger = logging.getLogger(__name__)
@@ -535,10 +536,10 @@ class nicheVAE(VAE):
         generative_outputs: dict[str, torch.Tensor | Distribution | None],
         kl_weight: float = 1.0,
         spatial_weight: float = 1.0,
-        classification_ratio=20,
+        classification_ratio=50,
         epsilon: float = 1e-6,
         n_samples_mixture: int = 30,
-    ) -> LossOutput:
+    ) -> NicheLossOutput:
         """Compute the loss."""
         from torch.distributions import kl_divergence
 
@@ -628,7 +629,7 @@ class nicheVAE(VAE):
             _weighted_reconst_loss_cell + _weighted_reconst_loss_niche + _weighted_kl_local + _weighted_composition_loss
         )
 
-        return LossOutput(
+        return NicheLossOutput(
             loss=loss,
             reconstruction_loss=reconst_loss_cell,
             classification_loss=classification_loss.mean() if self.semisupervised else None,
@@ -638,6 +639,8 @@ class nicheVAE(VAE):
                 MODULE_KEYS.KL_L_KEY: kl_divergence_l,
                 MODULE_KEYS.KL_Z_KEY: kl_divergence_z,
             },
+            composition_loss=composition_loss,
+            niche_loss=masked_reconst_loss_niche,
             extra_metrics={
                 NICHEVI_MODULE_KEYS.NLL_NICHE_COMPOSITION_KEY: torch.mean(composition_loss),
                 NICHEVI_MODULE_KEYS.NLL_NICHE_EXPRESSION_KEY: torch.mean(masked_reconst_loss_niche),

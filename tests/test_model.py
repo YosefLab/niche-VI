@@ -120,8 +120,10 @@ def test_nichevi():
 
     print("Finished training")
 
+    print(nichevae.history.keys())
     nichevae.get_elbo(indices=nichevae.validation_indices)
-    # nichevae.get_elbo()
+    nichevae.get_composition_error(return_mean=False, indices=nichevae.validation_indices)
+    nichevae.get_niche_error(return_mean=False, indices=nichevae.validation_indices)
     nichevae.get_normalized_expression()
     nichevae.get_latent_representation()
     nichevae.predict_neighborhood()  # specific to nicheSCVI

@@ -30,9 +30,10 @@ from scvi.model.base import (
     ArchesMixin,
     BaseMinifiedModeModelClass,
     EmbeddingMixin,
-    # RNASeqMixin,
-    VAEMixin,
 )
+
+# RNASeqMixin,
+# VAEMixin,
 from scvi.model.utils import get_minified_adata_scrna
 from scvi.utils import setup_anndata_dsp
 
@@ -40,6 +41,7 @@ from ._constants import NICHEVI_REGISTRY_KEYS
 from ._module import nicheVAE
 from ._rnamixin import NicheRNASeqMixin
 from ._training_mixin import UnsupervisedTrainingMixin
+from ._vaemixin import NicheVAEMixin
 
 _SCVI_LATENT_QZM = "_scvi_latent_qzm"
 _SCVI_LATENT_QZV = "_scvi_latent_qzv"
@@ -51,7 +53,7 @@ logger = logging.getLogger(__name__)
 class nicheSCVI(
     EmbeddingMixin,
     NicheRNASeqMixin,
-    VAEMixin,
+    NicheVAEMixin,
     ArchesMixin,
     UnsupervisedTrainingMixin,
     BaseMinifiedModeModelClass,
