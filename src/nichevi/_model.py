@@ -30,17 +30,18 @@ from scvi.model.base import (
     ArchesMixin,
     BaseMinifiedModeModelClass,
     EmbeddingMixin,
-    # RNASeqMixin,
-    VAEMixin,
 )
+
+# RNASeqMixin,
+# VAEMixin,
 from scvi.model.utils import get_minified_adata_scrna
 from scvi.utils import setup_anndata_dsp
-from sklearn.neighbors import NearestNeighbors
 
 from ._constants import NICHEVI_REGISTRY_KEYS
 from ._module import nicheVAE
 from ._rnamixin import NicheRNASeqMixin
 from ._training_mixin import UnsupervisedTrainingMixin
+from ._vaemixin import NicheVAEMixin
 
 _SCVI_LATENT_QZM = "_scvi_latent_qzm"
 _SCVI_LATENT_QZV = "_scvi_latent_qzv"
@@ -52,7 +53,7 @@ logger = logging.getLogger(__name__)
 class nicheSCVI(
     EmbeddingMixin,
     NicheRNASeqMixin,
-    VAEMixin,
+    NicheVAEMixin,
     ArchesMixin,
     UnsupervisedTrainingMixin,
     BaseMinifiedModeModelClass,
@@ -133,6 +134,8 @@ class nicheSCVI(
         **kwargs,
     ):
         super().__init__(adata)
+
+        self.n_labels = self.summary_stats.n_labels
 
         self._module_kwargs = {
             "n_hidden": n_hidden,
@@ -217,17 +220,6 @@ class nicheSCVI(
         ###########
         log1p: bool = False,
     ):
-        adata.obsm[niche_indexes_key] = np.zeros(
-            (adata.n_obs, k_nn)
-        )  # for each cell, store the indexes of its k_nn neighbors
-        adata.obsm[niche_distances_key] = np.zeros(
-            (adata.n_obs, k_nn)
-        )  # for each cell, store the distances to its k_nn neighbors
-        n_cell_types = len(adata.obs[labels_key].unique())  # number of cell types
-        adata.obsm[niche_composition_key] = np.zeros(
-            (adata.n_obs, n_cell_types)
-        )  # for each cell, store the composition of its neighborhood as a convex vector of cell type proportions
-
         get_niche_indexes(
             adata=adata,
             sample_key=sample_key,
@@ -527,6 +519,15 @@ def get_niche_indexes(
     k_nn: int,
     niche_distances_key: str | None = None,
 ):
+    from sklearn.neighbors import NearestNeighbors
+
+    adata.obsm[niche_indexes_key] = np.zeros(
+        (adata.n_obs, k_nn)
+    )  # for each cell, store the indexes of its k_nn neighbors
+    adata.obsm[niche_distances_key] = np.zeros(
+        (adata.n_obs, k_nn)
+    )  # for each cell, store the distances to its k_nn neighbors
+
     adata.obs["index"] = np.arange(adata.shape[0])
     # build a dictionnary giving the index of each 'donor_slice' observation:
     donor_slice_index = {}
@@ -571,6 +572,11 @@ def get_neighborhood_composition(
     indices_key: str = "niche_indexes",
     niche_composition_key: str = "niche_composition",
 ):
+    n_cell_types = len(adata.obs[cell_type_column].unique())  # number of cell types
+    adata.obsm[niche_composition_key] = np.zeros(
+        (adata.n_obs, n_cell_types)
+    )  # for each cell, store the composition of its neighborhood as a convex vector of cell type proportions
+
     indices = adata.obsm[indices_key].astype(int)
 
     cell_types = adata.obs[cell_type_column].unique().tolist()

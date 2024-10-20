@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from lightning import LightningDataModule
-
 from scvi.dataloaders import DataSplitter
 from scvi.model._utils import get_max_epochs_heuristic, use_distributed_sampler
 from scvi.train import TrainRunner
 from scvi.utils._docstrings import devices_dsp
-
 
 from ._trainingplan import TrainingPlan
 
@@ -85,13 +83,9 @@ class UnsupervisedTrainingMixin:
            Additional keyword arguments passed into :class:`~scvi.train.Trainer`.
         """
         if data_module is not None and not self._module_init_on_train:
-            raise ValueError(
-                "Cannot pass in `data_module` if the model was initialized with `adata`."
-            )
+            raise ValueError("Cannot pass in `data_module` if the model was initialized with `adata`.")
         elif data_module is None and self._module_init_on_train:
-            raise ValueError(
-                "If the model was not initialized with `adata`, a `data_module` must be passed in."
-            )
+            raise ValueError("If the model was not initialized with `adata`, a `data_module` must be passed in.")
 
         if max_epochs is None:
             if data_module is None:
@@ -99,10 +93,7 @@ class UnsupervisedTrainingMixin:
             elif hasattr(data_module, "n_obs"):
                 max_epochs = get_max_epochs_heuristic(data_module.n_obs)
             else:
-                raise ValueError(
-                    "If `data_module` does not have `n_obs` attribute, `max_epochs` must be "
-                    "passed in."
-                )
+                raise ValueError("If `data_module` does not have `n_obs` attribute, `max_epochs` must be " "passed in.")
 
         if data_module is None:
             datasplitter_kwargs = datasplitter_kwargs or {}
@@ -112,9 +103,7 @@ class UnsupervisedTrainingMixin:
                 validation_size=validation_size,
                 batch_size=batch_size,
                 shuffle_set_split=shuffle_set_split,
-                distributed_sampler=use_distributed_sampler(
-                    trainer_kwargs.get("strategy", None)
-                ),
+                distributed_sampler=use_distributed_sampler(trainer_kwargs.get("strategy", None)),
                 load_sparse_tensor=load_sparse_tensor,
                 **datasplitter_kwargs,
             )
@@ -129,12 +118,10 @@ class UnsupervisedTrainingMixin:
             )
 
         plan_kwargs = plan_kwargs or {}
-        training_plan = self._training_plan_cls(self.module, **plan_kwargs)
+        training_plan = self._training_plan_cls(self.module, n_classes=self.n_labels, **plan_kwargs)
 
         es = "early_stopping"
-        trainer_kwargs[es] = (
-            early_stopping if es not in trainer_kwargs.keys() else trainer_kwargs[es]
-        )
+        trainer_kwargs[es] = early_stopping if es not in trainer_kwargs.keys() else trainer_kwargs[es]
         runner = self._train_runner_cls(
             self,
             training_plan=training_plan,

@@ -6,18 +6,19 @@ from typing import Literal
 import numpy as np
 import torch
 from scvi import REGISTRY_KEYS
-from scvi.module import VAE
+from scvi.module import VAE, Classifier
 from scvi.module._constants import MODULE_KEYS
 from scvi.module.base import (
     # BaseMinifiedModeModuleClass,
     # EmbeddingModuleMixin,
-    LossOutput,
+    # LossOutput,
     auto_move_data,
 )
 from scvi.nn import one_hot
 from torch.distributions import Distribution
 
-from ._components import DirichletDecoder, Encoder, NicheDecoder, NicheDecoderAttention, NicheDecoderConditional
+from ._base_module import NicheLossOutput
+from ._components import DirichletDecoder, Encoder, NicheDecoder, NicheDecoderConditional
 from ._constants import NICHEVI_MODULE_KEYS, NICHEVI_REGISTRY_KEYS
 
 logger = logging.getLogger(__name__)
@@ -164,11 +165,15 @@ class nicheVAE(VAE):
         spatial_weight: float = 1.0,
         niche_rec_weight: float = 1.0,
         compo_rec_weight: float = 1.0,
+        ##############################
         n_heads: int | None = 2,
         n_hidden_dist_decoder: int | None = None,
         n_tokens_decoder: int | None = None,
+        ##############################
         prior_mixture: bool = False,
         prior_mixture_k: int = 20,
+        semisupervised: bool = False,
+        linear_classifier: bool = False,
         ##############################
         encode_covariates: bool = False,
         deeply_inject_covariates: bool = True,
@@ -227,6 +232,7 @@ class nicheVAE(VAE):
         self.prior_mixture_k = prior_mixture_k
         self.n_hidden_dist_decoder = n_hidden_dist_decoder
         self.n_tokens_decoder = n_tokens_decoder
+        self.semisupervised = semisupervised
 
         self.batch_representation = batch_representation
         if self.batch_representation == "embedding":
@@ -241,9 +247,23 @@ class nicheVAE(VAE):
         use_layer_norm_decoder = use_layer_norm == "decoder" or use_layer_norm == "both"
 
         if self.prior_mixture is True:
-            self.prior_means = torch.nn.Parameter(0.01 * torch.randn([prior_mixture_k, n_latent]))
-            self.prior_log_scales = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]))
-            self.prior_logits = torch.nn.Parameter(torch.zeros([prior_mixture_k]))
+            if self.semisupervised:
+                prior_mixture_k = n_labels
+
+                self.prior_means = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]))
+                self.prior_log_scales = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]))
+                self.prior_logits = torch.nn.Parameter(torch.ones([prior_mixture_k]))
+
+            else:
+                self.prior_means = torch.nn.Parameter(torch.randn([prior_mixture_k, n_latent]))
+                self.prior_log_scales = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]) - 1.0)
+                self.prior_logits = torch.nn.Parameter(torch.ones([prior_mixture_k]))
+
+        # #DESTVI
+        # if self.prior == "mog":
+        #     self.prior_means = torch.nn.Parameter(0.01 * torch.randn([n_labels, self.num_classes_mog, n_latent]))
+        #     self.prior_log_std = torch.nn.Parameter(torch.zeros([n_labels, self.num_classes_mog, n_latent]))
+        #     self.prior_logits = torch.nn.Parameter(torch.zeros([n_labels, self.num_classes_mog]))
 
         n_input_encoder = n_input + n_continuous_cov * encode_covariates
         if self.batch_representation == "embedding":
@@ -336,6 +356,24 @@ class nicheVAE(VAE):
             use_layer_norm=use_layer_norm_decoder,
             **_extra_decoder_kwargs,
         )
+
+        if self.semisupervised:
+            # Classifier takes n_latent as input
+            cls_parameters = {
+                "n_layers": 0 if linear_classifier else n_layers,
+                "n_hidden": 0 if linear_classifier else n_hidden,
+                "dropout_rate": dropout_rate,
+                "logits": True,  # no Softmax
+            }
+            self.classifier = Classifier(
+                n_latent,
+                n_labels=n_labels,
+                use_batch_norm=use_batch_norm_encoder,
+                use_layer_norm=use_layer_norm_encoder,
+                **cls_parameters,
+            )
+        else:
+            self.classifier = None
 
     @auto_move_data
     def generative(
@@ -430,13 +468,34 @@ class nicheVAE(VAE):
             pl = Normal(local_library_log_means, local_library_log_vars.sqrt())
 
         if self.prior_mixture is True:
-            cats = Categorical(logits=self.prior_logits)
-            normal_dists = Independent(
-                Normal(self.prior_means, torch.exp(self.prior_log_scales) + 1e-4), reinterpreted_batch_ndims=1
-            )
+            u_prior_logits = self.prior_logits
+            u_prior_means = self.prior_means
+            u_prior_scales = torch.exp(self.prior_log_scales) + 1e-4
+
+            if self.semisupervised:
+                logits_input = (
+                    torch.stack(
+                        [
+                            torch.nn.functional.one_hot(y_i, self.n_labels)
+                            if y_i < self.n_labels
+                            else torch.zeros(self.n_labels)
+                            for y_i in y.ravel()
+                        ]
+                    )
+                    .to(z.device)
+                    .float()
+                )
+                u_prior_logits = u_prior_logits + 10 * logits_input
+                u_prior_means = u_prior_means.expand(y.shape[0], -1, -1)
+                u_prior_scales = u_prior_scales.expand(y.shape[0], -1, -1)
+            cats = Categorical(logits=u_prior_logits)
+            normal_dists = Independent(Normal(u_prior_means, u_prior_scales), reinterpreted_batch_ndims=1)
             pz = MixtureSameFamily(cats, normal_dists)
         else:
             pz = Normal(torch.zeros_like(z), torch.ones_like(z))
+
+        # if self.semisupervised:
+        #     y_ct = self.classifier(z)
 
         niche_composition = self.composition_decoder(
             decoder_input, batch_index, *categorical_input
@@ -467,6 +526,7 @@ class nicheVAE(VAE):
             # NICHEVI_MODULE_KEYS.NICHE_ATTENTION: niche_attention,
             NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION: niche_expression,
             NICHEVI_MODULE_KEYS.P_NICHE_COMPOSITION: niche_composition,
+            # "y_ct": y_ct if self.semisupervised else None,
         }
 
     def loss(
@@ -476,20 +536,30 @@ class nicheVAE(VAE):
         generative_outputs: dict[str, torch.Tensor | Distribution | None],
         kl_weight: float = 1.0,
         spatial_weight: float = 1.0,
+        classification_ratio=50,
         epsilon: float = 1e-6,
-    ) -> LossOutput:
+        n_samples_mixture: int = 30,
+    ) -> NicheLossOutput:
         """Compute the loss."""
         from torch.distributions import kl_divergence
 
         x = tensors[REGISTRY_KEYS.X_KEY]
+        if self.semisupervised:
+            y = tensors[REGISTRY_KEYS.LABELS_KEY].ravel().long()
+            z_mean = inference_outputs[MODULE_KEYS.QZ_KEY].loc
+            y_ct = self.classifier(z_mean)
+            # y_ct = generative_outputs["y_ct"]
+            classification_loss = torch.nn.functional.cross_entropy(y_ct, y, reduction="none")
 
         if self.prior_mixture is True:
             # z = inference_outputs['qz'].rsample()
-            z = inference_outputs[MODULE_KEYS.QZ_KEY].rsample(sample_shape=(10,))  # sample multiple times, was 30
+            z = inference_outputs[MODULE_KEYS.QZ_KEY].rsample(
+                sample_shape=(n_samples_mixture,)
+            )  # sample multiple times
             # sample x n_obs x n_latent
-            kl_divergence_z = -(
-                generative_outputs[MODULE_KEYS.PZ_KEY].log_prob(z)
-                - inference_outputs[MODULE_KEYS.QZ_KEY].log_prob(z).sum(-1)
+            kl_divergence_z = (
+                inference_outputs[MODULE_KEYS.QZ_KEY].log_prob(z).sum(-1)
+                - generative_outputs[MODULE_KEYS.PZ_KEY].log_prob(z)
             ).mean(0)
 
         # kl_u = "qu".log_prob("u") - "pu".log_prob('u')
@@ -503,6 +573,7 @@ class nicheVAE(VAE):
         #         inference_outputs["u"]
         #     )
         #     kl_u = kl_u.sum(-1)
+        # kl_divergence_z = (qz.log_prob(u).sum(-1) - prior.log_prob(u)).mean(0)
 
         else:
             kl_divergence_z = kl_divergence(
@@ -516,9 +587,12 @@ class nicheVAE(VAE):
                 generative_outputs[MODULE_KEYS.PL_KEY],
             ).sum(dim=1)
         else:
-            kl_divergence_l = torch.tensor(0.0, device=x.device)
+            kl_divergence_l = torch.zeros_like(kl_divergence_z)
 
         reconst_loss_cell = -generative_outputs[MODULE_KEYS.PX_KEY].log_prob(x).sum(-1)
+
+        if self.semisupervised:
+            reconst_loss_cell = reconst_loss_cell + classification_ratio * classification_loss
 
         kl_local_for_warmup = kl_divergence_z
         kl_local_no_warmup = kl_divergence_l
@@ -555,13 +629,18 @@ class nicheVAE(VAE):
             _weighted_reconst_loss_cell + _weighted_reconst_loss_niche + _weighted_kl_local + _weighted_composition_loss
         )
 
-        return LossOutput(
+        return NicheLossOutput(
             loss=loss,
             reconstruction_loss=reconst_loss_cell,
+            classification_loss=classification_loss.mean() if self.semisupervised else None,
+            true_labels=y if self.semisupervised else None,
+            logits=y_ct if self.semisupervised else None,
             kl_local={
                 MODULE_KEYS.KL_L_KEY: kl_divergence_l,
                 MODULE_KEYS.KL_Z_KEY: kl_divergence_z,
             },
+            composition_loss=composition_loss,
+            niche_loss=masked_reconst_loss_niche,
             extra_metrics={
                 NICHEVI_MODULE_KEYS.NLL_NICHE_COMPOSITION_KEY: torch.mean(composition_loss),
                 NICHEVI_MODULE_KEYS.NLL_NICHE_EXPRESSION_KEY: torch.mean(masked_reconst_loss_niche),
