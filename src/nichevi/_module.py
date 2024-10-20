@@ -164,7 +164,7 @@ class nicheVAE(VAE):
         spatial_weight: float = 1.0,
         niche_rec_weight: float = 1.0,
         compo_rec_weight: float = 1.0,
-        n_heads: int | None = 2,
+        n_heads: int | None = None,
         n_hidden_dist_decoder: int | None = None,
         n_tokens_decoder: int | None = None,
         prior_mixture: bool = False,

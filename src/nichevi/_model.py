@@ -161,21 +161,15 @@ class nicheSCVI(
             )
         else:
             n_cats_per_cov = (
-                self.adata_manager.get_state_registry(
-                    REGISTRY_KEYS.CAT_COVS_KEY
-                ).n_cats_per_key
+                self.adata_manager.get_state_registry(REGISTRY_KEYS.CAT_COVS_KEY).n_cats_per_key
                 if REGISTRY_KEYS.CAT_COVS_KEY in self.adata_manager.data_registry
                 else None
             )
             n_batch = self.summary_stats.n_batch
-            use_size_factor_key = (
-                REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
-            )
+            use_size_factor_key = REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
             library_log_means, library_log_vars = None, None
             if not use_size_factor_key and self.minified_data_type is None:
-                library_log_means, library_log_vars = _init_library_size(
-                    self.adata_manager, n_batch
-                )
+                library_log_means, library_log_vars = _init_library_size(self.adata_manager, n_batch)
             self.module = self._module_cls(
                 n_input=self.summary_stats.n_vars,
                 n_output_niche=self.summary_stats.n_latent_mean,

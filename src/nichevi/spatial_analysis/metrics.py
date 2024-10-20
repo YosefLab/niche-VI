@@ -156,9 +156,7 @@ def compute_k_nn(
         _, latent_k_nn_indices = knn.kneighbors(adata.obsm[latent_space_key])
 
     if method == "pynn":
-        latent_k_nn_indices = pynndescent(
-            X=adata.obsm[latent_space_key], n_neighbors=k, random_state=0, n_jobs=n_jobs
-        )
+        latent_k_nn_indices = pynndescent(X=adata.obsm[latent_space_key], n_neighbors=k, random_state=0, n_jobs=n_jobs)
 
     return latent_k_nn_indices
 
@@ -294,11 +292,7 @@ class SpatialAnalysis:
                 # rprint("Saved leiden clusters in " + key_to_add)
                 keys_added.append(key_to_add)
 
-        sample_names = (
-            self.adata.obs[self.sample_key].unique().tolist()
-            if not sample_subset
-            else sample_subset
-        )
+        sample_names = self.adata.obs[self.sample_key].unique().tolist() if not sample_subset else sample_subset
 
         rprint("Leiden clusters saved in: ", keys_added)
 
@@ -358,16 +352,12 @@ class SpatialAnalysis:
                 )
 
                 for k in self.k_nn_range:
-                    cells_in_the_latent_neighborhood_k = (
-                        cells_in_the_latent_neighborhood[:, :k]
-                    )
+                    cells_in_the_latent_neighborhood_k = cells_in_the_latent_neighborhood[:, :k]
 
                     if "distance" in self.set_of_metrics:
                         xy = adata_fov.obsm[self.spatial_coord_key]  # .values
 
-                        spatial_coord_of_latent_neighbors_fov = xy[
-                            cells_in_the_latent_neighborhood_k
-                        ]
+                        spatial_coord_of_latent_neighbors_fov = xy[cells_in_the_latent_neighborhood_k]
 
                         dists_parallel = Parallel(n_jobs=-1)(
                             delayed(cdist)(
@@ -412,22 +402,16 @@ class SpatialAnalysis:
                         similarity_parallel = np.squeeze(np.array(similarity_parallel))
 
                         if self.reduction[1] == "median":
-                            reducted_similarity = np.median(
-                                similarity_parallel, axis=-1
-                            )
+                            reducted_similarity = np.median(similarity_parallel, axis=-1)
 
                         if self.reduction[1] == "mean":
                             reducted_similarity = np.mean(similarity_parallel, axis=-1)
 
                         if self.reduction[1] == "10th":
-                            reducted_similarity = np.percentile(
-                                similarity_parallel, 10, axis=-1
-                            )
+                            reducted_similarity = np.percentile(similarity_parallel, 10, axis=-1)
 
                         if self.reduction[1] == "25th":
-                            reducted_similarity = np.percentile(
-                                similarity_parallel, 25, axis=-1
-                            )
+                            reducted_similarity = np.percentile(similarity_parallel, 25, axis=-1)
 
                         if self.reduction[1] is None:
                             reducted_similarity = similarity_parallel
@@ -436,47 +420,39 @@ class SpatialAnalysis:
 
             if "distance" in self.set_of_metrics:
                 for k in self.k_nn_range:
-                    self.adata.obs[
-                        KEYS_SPATIAL.DISTANCE_KEY + latent_space_key + "_k" + str(k)
-                    ] = np.concatenate(latent_and_phys_corr[k])
+                    self.adata.obs[KEYS_SPATIAL.DISTANCE_KEY + latent_space_key + "_k" + str(k)] = np.concatenate(
+                        latent_and_phys_corr[k]
+                    )
 
             if "similarity" in self.set_of_metrics:
                 for k in self.k_nn_range:
-                    self.adata.obs[
-                        KEYS_SPATIAL.SIMILARITY_KEY + latent_space_key + "_k" + str(k)
-                    ] = np.concatenate(neighborhood_similarity[k])
+                    self.adata.obs[KEYS_SPATIAL.SIMILARITY_KEY + latent_space_key + "_k" + str(k)] = np.concatenate(
+                        neighborhood_similarity[k]
+                    )
 
         return None
 
         if "cluster_stats" in self.set_of_metrics:
             if self.leiden_keys is None:
-                raise ValueError(
-                    "Please run the method leiden_clusters before running cluster_stats."
-                )
+                raise ValueError("Please run the method leiden_clusters before running cluster_stats.")
 
             ct = self.adata.obsm[self.ct_composition_key]
 
             self.cluster_stats = {}
 
             for leiden_key in self.leiden_keys:
-                leiden_clusters = self.adata.obs[
-                    KEYS_SPATIAL.CLUSTER_KEY + leiden_key
-                ].unique()
+                leiden_clusters = self.adata.obs[KEYS_SPATIAL.CLUSTER_KEY + leiden_key].unique()
 
                 df_mean = pd.DataFrame(columns=ct.columns, index=leiden_clusters)
                 df_std = pd.DataFrame(columns=ct.columns, index=leiden_clusters)
 
                 for cluster in leiden_clusters:
-                    ct_cluster = ct[
-                        self.adata.obs[KEYS_SPATIAL.CLUSTER_KEY + leiden_key] == cluster
-                    ]
+                    ct_cluster = ct[self.adata.obs[KEYS_SPATIAL.CLUSTER_KEY + leiden_key] == cluster]
 
                     df_mean.loc[cluster] = ct_cluster.mean(axis=0)
                     df_std.loc[cluster] = ct_cluster.std(axis=0)
 
-                self.cluster_stats[leiden_key] = ClusterStats(
-                    df_mean.sort_index(), df_std.sort_index()
-                )
+                self.cluster_stats[leiden_key] = ClusterStats(df_mean.sort_index(), df_std.sort_index())
 
         if "latent_overlap" in self.set_of_metrics:
             # check if latent_indexes_dict is empty
@@ -486,19 +462,12 @@ class SpatialAnalysis:
                     "Please provide the keys for the 2 latent spaces you want to compare with z1_reference and z2_comparison."
                 )
             # compute the jaccard index between the two values of the dictionary latent_indexes_dict
-            latent_neighbors_1 = np.concatenate(
-                latent_indexes_dict[list(latent_indexes_dict.keys())[0]]
-            )
-            latent_neighbors_2 = np.concatenate(
-                latent_indexes_dict[list(latent_indexes_dict.keys())[1]]
-            )
+            latent_neighbors_1 = np.concatenate(latent_indexes_dict[list(latent_indexes_dict.keys())[0]])
+            latent_neighbors_2 = np.concatenate(latent_indexes_dict[list(latent_indexes_dict.keys())[1]])
             self.adata.obs[KEYS_SPATIAL.LATENT_OVERLAP_KEY] = [
-                jaccard_score(latent_neighbors_1[i], latent_neighbors_2[i])
-                for i in range(len(latent_neighbors_1))
+                jaccard_score(latent_neighbors_1[i], latent_neighbors_2[i]) for i in range(len(latent_neighbors_1))
             ]
-            rprint(
-                "The latent spaces overlap is saved in the.obs column: latent_overlap."
-            )
+            rprint("The latent spaces overlap is saved in the.obs column: latent_overlap.")
 
         return None
 
@@ -506,9 +475,7 @@ class SpatialAnalysis:
         self,
     ):
         if "latent_overlap" not in self.adata.obs.columns:
-            raise ValueError(
-                'Please run compute_spatial_metrics with the argument set_of_metrics=["latent_overlap"]'
-            )
+            raise ValueError('Please run compute_spatial_metrics with the argument set_of_metrics=["latent_overlap"]')
 
         # compute the avergae of adata.obs['latent_overlap'] by categories in adata.obs['sample']
         cell_types = self.adata.obs[self.label_key].unique().tolist()
@@ -526,9 +493,7 @@ class SpatialAnalysis:
         for i in range(n_cell_types):
             type = int_to_cell_types[i]
             mean_jaccard = np.mean(
-                self.adata[self.adata.obs[self.label_key] == type].obs[
-                    "latent_overlap"
-                ],
+                self.adata[self.adata.obs[self.label_key] == type].obs["latent_overlap"],
                 axis=0,
             )
 
@@ -550,22 +515,14 @@ class SpatialAnalysis:
         comparison_key: Optional[str] = None,
         validation_only: bool = True,
         train_only: bool = False,
-        plot_type: Literal[
-            "kde", "ecdf", "boxplot", "hist", "entropy", "ct_entropy"
-        ] = "boxplot",
+        plot_type: Literal["kde", "ecdf", "boxplot", "hist", "entropy", "ct_entropy"] = "boxplot",
     ):
         if metric == "distance":
             metric_key = KEYS_SPATIAL.DISTANCE_KEY
             metric_title = self.reduction[0] + " " + METRIC_TITLE.DISTANCE_KEY
         if metric == "similarity":
             metric_key = KEYS_SPATIAL.SIMILARITY_KEY
-            metric_title = (
-                self.reduction[1]
-                + " "
-                + self.similarity_metric
-                + " "
-                + METRIC_TITLE.SIMILARITY_KEY
-            )
+            metric_title = self.reduction[1] + " " + self.similarity_metric + " " + METRIC_TITLE.SIMILARITY_KEY
 
         if reference_key is None:
             reference_key = self.z1_reference
@@ -578,8 +535,7 @@ class SpatialAnalysis:
             indices = [*range(len(self.adata))]
 
         data = {
-            "k="
-            + str(k): (
+            "k=" + str(k): (
                 self.adata.obs[metric_key + reference_key + "_k" + str(k)][indices],
                 self.adata.obs[metric_key + comparison_key + "_k" + str(k)][indices],
             )
@@ -671,9 +627,7 @@ class SpatialAnalysis:
                 plt.tight_layout(rect=[0, 0, 1, 0.96])
 
         if plot_type == "entropy":
-            ct_entropy = entropy(
-                self.adata.obsm[self.ct_composition_key].values[indices], axis=1
-            )
+            ct_entropy = entropy(self.adata.obsm[self.ct_composition_key].values[indices], axis=1)
             for (key, (series1, series2)), ax in zip(data.items(), axes):
                 # Plot series2 metric against entropy
                 ax.scatter(series2, ct_entropy, color="blue", alpha=0.5)
@@ -693,9 +647,7 @@ class SpatialAnalysis:
 
         if plot_type == "ct_entropy":
             # Compute the entropy of ct proportion around each cell type:
-            ct_entropy = entropy(
-                self.adata.obsm[self.ct_composition_key].values[indices], axis=1
-            )
+            ct_entropy = entropy(self.adata.obsm[self.ct_composition_key].values[indices], axis=1)
             ct = self.adata.obs[self.label_key][indices].values
 
             unique_categories = np.unique(ct)
@@ -795,18 +747,10 @@ class SpatialAnalysis:
 
             rprint("Positive differences:")
             df_ct_pos = pd.DataFrame(df_ct_pos)
-            rprint(
-                df_ct_pos.sort_values(by=df_ct_pos.columns[-1], ascending=False).iloc[
-                    :, -1
-                ]
-            )
+            rprint(df_ct_pos.sort_values(by=df_ct_pos.columns[-1], ascending=False).iloc[:, -1])
             rprint("Negative differences:")
             df_ct_neg = pd.DataFrame(df_ct_neg)
-            rprint(
-                df_ct_neg.sort_values(by=df_ct_neg.columns[-1], ascending=False).iloc[
-                    :, -1
-                ]
-            )
+            rprint(df_ct_neg.sort_values(by=df_ct_neg.columns[-1], ascending=False).iloc[:, -1])
 
         # Add labels and title
         fig.suptitle(metric_title)
@@ -824,18 +768,10 @@ class SpatialAnalysis:
             metric_title = self.reduction[0] + " " + METRIC_TITLE.DISTANCE_KEY
         if metric == "similarity":
             metric_key = KEYS_SPATIAL.SIMILARITY_KEY
-            metric_title = (
-                self.reduction[1]
-                + " "
-                + self.similarity_metric
-                + " "
-                + METRIC_TITLE.SIMILARITY_KEY
-            )
+            metric_title = self.reduction[1] + " " + self.similarity_metric + " " + METRIC_TITLE.SIMILARITY_KEY
 
         if plot_type == "boxplot":
-            columns_to_plot = [
-                metric_key + latent_key for latent_key in self.latent_space_keys
-            ]
+            columns_to_plot = [metric_key + latent_key for latent_key in self.latent_space_keys]
             self.adata.obs.boxplot(
                 column=columns_to_plot,
                 by="set",
@@ -920,9 +856,7 @@ class SpatialAnalysis:
             df = pd.DataFrame(stat_dict)
             df = df.set_index("Model")
             df = df.round(3)
-            df_sorted_k = df.sort_values(
-                by="Mean " + distribution + " " + indices_key, ascending=True
-            )
+            df_sorted_k = df.sort_values(by="Mean " + distribution + " " + indices_key, ascending=True)
 
             df_sorted[k] = df_sorted_k
 
@@ -984,9 +918,7 @@ class SpatialAnalysis:
         """
         if train_only:
             if self.train_indices is None:
-                raise ValueError(
-                    "Please provide train_indices when train_only is True."
-                )
+                raise ValueError("Please provide train_indices when train_only is True.")
             else:
                 adata = self.adata[self.train_indices].copy()
                 save_metric_key = "train_"
@@ -994,9 +926,7 @@ class SpatialAnalysis:
 
         if validation_only:
             if self.validation_indices is None:
-                raise ValueError(
-                    "Please provide validation_indices when validation_only is True."
-                )
+                raise ValueError("Please provide validation_indices when validation_only is True.")
             else:
                 adata = self.adata[self.validation_indices].copy()
                 save_metric_key = "val_"
@@ -1193,9 +1123,7 @@ class SpatialAnalysis:
 
         df_summary = df_summary.set_index("Model")
         df_summary = df_summary.round(3)
-        df_summary_sorted = df_summary.sort_values(
-            by=mode + " " + metric + " ", ascending=False
-        )
+        df_summary_sorted = df_summary.sort_values(by=mode + " " + metric + " ", ascending=False)
 
         return df_summary_sorted
 
@@ -1288,14 +1216,10 @@ class SpatialAnalysis:
         # Transpose the DataFrame
         df_metric_transposed = df_metric.T
 
-        custom_cmap = sns.color_palette(
-            "Set1", n_colors=len(df_metric_transposed.columns)
-        )
+        custom_cmap = sns.color_palette("Set1", n_colors=len(df_metric_transposed.columns))
 
         # Plotting
-        ax = df_metric_transposed.plot(
-            kind="bar", rot=0, figsize=(14, 6), color=custom_cmap, width=0.7
-        )
+        ax = df_metric_transposed.plot(kind="bar", rot=0, figsize=(14, 6), color=custom_cmap, width=0.7)
 
         # Adding labels and title
         ax.set_ylabel(metric, fontsize=fs)
