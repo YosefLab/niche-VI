@@ -1,3 +1,4 @@
+from ._utils import _lisi_per_cell_type
 from .metrics import (
     SpatialAnalysis,
     compute_k_nn,
@@ -12,4 +13,5 @@ __all__ = [
     "compute_similarity",
     "compute_k_nn",
     "compute_jaccard",
+    "_lisi_per_cell_type",
 ]

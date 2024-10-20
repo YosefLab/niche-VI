@@ -6,8 +6,8 @@ from anndata import AnnData
 from scvi.model._utils import scrna_raw_counts_properties
 from scvi.model.base import (
     RNASeqMixin,
+    _de_core,
 )
-from scvi.model.base._utils import _de_core
 
 # from scvi.model.base._utils import _de_core
 from scvi.utils import de_dsp

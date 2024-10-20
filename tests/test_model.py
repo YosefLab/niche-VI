@@ -2,7 +2,6 @@ import numpy as np
 
 # import pytest
 from scvi.data import _constants, synthetic_iid
-from scvi.model.utils import mde
 
 from nichevi import nicheSCVI
 
@@ -10,10 +9,10 @@ N_LAYERS = 1
 N_LATENT = 15
 LIKELIHOOD = "nb"
 K_NN = 5
-N_HEADS = 3
-N_EPOCHS_NICHEVI = 1
+N_HEADS = None
+N_EPOCHS_NICHEVI = 2
 N_TOKENS = 10
-USE_BATCH_NORM = True
+USE_BATCH_NORM = False
 
 
 def test_nichevi():
@@ -92,6 +91,11 @@ def test_nichevi():
         n_latent=N_LATENT,
         use_batch_norm="both" if USE_BATCH_NORM else "none",
         use_layer_norm="none" if USE_BATCH_NORM else "both",
+        ###
+        prior_mixture=True,
+        # prior_mixture_k = 20,
+        semisupervised=True,
+        linear_classifier=True,
     )
 
     nichevae.train(
@@ -116,10 +120,13 @@ def test_nichevi():
 
     print("Finished training")
 
+    print(nichevae.history.keys())
     nichevae.get_elbo(indices=nichevae.validation_indices)
-    # nichevae.get_normalized_expression()
-    # nichevae.get_latent_representation()
-    # nichevae.predict_neighborhood()  # specific to nicheSCVI
+    nichevae.get_composition_error(return_mean=False, indices=nichevae.validation_indices)
+    nichevae.get_niche_error(return_mean=False, indices=nichevae.validation_indices)
+    nichevae.get_normalized_expression()
+    nichevae.get_latent_representation()
+    nichevae.predict_neighborhood()  # specific to nicheSCVI
     # nichevae.predict_niche_activation()  # specific to nicheSCVI
 
     nichevae.differential_expression(
