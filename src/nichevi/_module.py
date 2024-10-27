@@ -229,7 +229,6 @@ class nicheVAE(VAE):
         self.niche_likelihood = niche_likelihood
         self.n_heads = n_heads
         self.prior_mixture = prior_mixture
-        self.prior_mixture_k = prior_mixture_k
         self.n_hidden_dist_decoder = n_hidden_dist_decoder
         self.n_tokens_decoder = n_tokens_decoder
         self.semisupervised = semisupervised
@@ -249,12 +248,14 @@ class nicheVAE(VAE):
         if self.prior_mixture is True:
             if self.semisupervised:
                 prior_mixture_k = n_labels
+                self.prior_mixture_k = prior_mixture_k
 
                 self.prior_means = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]))
                 self.prior_log_scales = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]))
                 self.prior_logits = torch.nn.Parameter(torch.ones([prior_mixture_k]))
 
             else:
+                self.prior_mixture_k = prior_mixture_k
                 self.prior_means = torch.nn.Parameter(torch.randn([prior_mixture_k, n_latent]))
                 self.prior_log_scales = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]) - 1.0)
                 self.prior_logits = torch.nn.Parameter(torch.ones([prior_mixture_k]))
