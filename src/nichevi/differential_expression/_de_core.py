@@ -71,6 +71,12 @@ def _niche_de_core(
     # cell_labels = adata.obs[label_key].values
     # cell_coordinates = adata.obsm[cell_coordinates_key]
 
+    print("Computing nearest neighbors...")
+
+    print(cell_coordinates.shape)
+    print(cell_samples.shape)
+    print(cell_labels.shape)
+
     A = adjusted_nearest_neighbors(
         adata,
         cell_samples=cell_samples,
@@ -80,7 +86,8 @@ def _niche_de_core(
         k_nn=k_nn,
         return_sparse=True,
     )
-    # df_results = []
+
+    print("Computing DE...")
     DE_results = (
         {
             "group1_group2": [],

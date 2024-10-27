@@ -149,22 +149,38 @@ def adjusted_nearest_neighbors(
         sample_cell_types = np.squeeze(cell_labels[mask], axis=1)
 
         # build a dict of masks for each cell type
-        cell_type_masks = {cell_type: sample_cell_types != cell_type for cell_type in np.unique(sample_cell_types)}
+        cell_type_masks = {
+            cell_type: sample_cell_types != cell_type
+            for cell_type in np.unique(sample_cell_types)
+        }
 
         # make it a df
-        cell_type_masks_df = pd.DataFrame(cell_type_masks).transpose()
+        # cell_type_masks_df = pd.DataFrame(cell_type_masks).transpose()
+
+        # Convert the dictionary to a DataFrame with a SparseDtype
+        cell_type_masks_df = (
+            pd.DataFrame(cell_type_masks)
+            .astype(pd.SparseDtype("bool", fill_value=False))
+            .transpose()
+        )
 
         # then build the mask matrix of the sample
-        mask_matrix = cell_type_masks_df.loc[sample_cell_types].values
+        # mask_matrix = cell_type_masks_df.loc[sample_cell_types].values
+
+        # Build the mask matrix of the sample using the sparse DataFrame
+        # This should still work with `.loc` and will keep the sparsity of the data
+        mask_matrix = cell_type_masks_df.loc[sample_cell_types].sparse.to_coo().tocsr()
 
         if radius is not None:
             nn = NearestNeighbors(radius=radius)
             nn.fit(sample_coord)
             A = nn.radius_neighbors_graph(sample_coord)
         elif k_nn is not None:
+            print(f"Computing {k_nn} nearest neighbors for sample {sample}")
             nn = NearestNeighbors(n_neighbors=k_nn + 1)
             nn.fit(sample_coord)
             A = nn.kneighbors_graph(sample_coord)
+            print(f"Computed {k_nn} nearest neighbors for sample {sample}")
         else:
             raise ValueError("Either radius or k_nn must be provided.")
 
@@ -178,7 +194,9 @@ def adjusted_nearest_neighbors(
 
     row_counts = np.diff(adjacency_matrix.indptr)
     # print mean and std of number of neighbors with a sigma letter for the std, round to 2 decimals:
-    print(f"Mean number of neighbors: {np.mean(row_counts):.1f} ± {np.std(row_counts):.1f}")
+    print(
+        f"Mean number of neighbors: {np.mean(row_counts):.1f} ± {np.std(row_counts):.1f}"
+    )
 
     if return_sparse:
         return adjacency_matrix
@@ -211,7 +229,9 @@ def _fdr_de_prediction(posterior_probas: pd.Series, fdr: float = 0.05) -> pd.Ser
     sorted_pgs = posterior_probas.sort_values(ascending=False)
     cumulative_fdr = (1.0 - sorted_pgs).cumsum() / (1.0 + np.arange(len(sorted_pgs)))
     d = (cumulative_fdr <= fdr).sum()
-    is_pred_de = pd.Series(np.zeros_like(cumulative_fdr).astype(bool), index=sorted_pgs.index)
+    is_pred_de = pd.Series(
+        np.zeros_like(cumulative_fdr).astype(bool), index=sorted_pgs.index
+    )
     is_pred_de.iloc[:d] = True
     is_pred_de = is_pred_de.loc[original_index]
     return is_pred_de

@@ -34,6 +34,7 @@ def test_nichevi():
     adata.layers["counts"] = adata.X.copy()
 
     setup_kwargs = {
+        "sample_key": "batch",
         "labels_key": "labels",
         "cell_coordinates_key": "coordinates",
         "expression_embedding_key": "qz1_m",
@@ -46,7 +47,6 @@ def test_nichevi():
     nicheSCVI.preprocessing_anndata(
         adata,
         k_nn=K_NN,
-        sample_key="batch",
         **setup_kwargs,
     )
 
