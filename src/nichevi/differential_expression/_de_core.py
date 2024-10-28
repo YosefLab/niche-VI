@@ -73,10 +73,6 @@ def _niche_de_core(
 
     print("Computing nearest neighbors...")
 
-    print(cell_coordinates.shape)
-    print(cell_samples.shape)
-    print(cell_labels.shape)
-
     A = adjusted_nearest_neighbors(
         adata,
         cell_samples=cell_samples,

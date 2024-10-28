@@ -149,27 +149,24 @@ def adjusted_nearest_neighbors(
         sample_cell_types = np.squeeze(cell_labels[mask], axis=1)
 
         # build a dict of masks for each cell type
-        cell_type_masks = {
-            cell_type: sample_cell_types != cell_type
-            for cell_type in np.unique(sample_cell_types)
-        }
+        cell_type_masks = {cell_type: sample_cell_types != cell_type for cell_type in np.unique(sample_cell_types)}
 
         # make it a df
-        # cell_type_masks_df = pd.DataFrame(cell_type_masks).transpose()
+        cell_type_masks_df = pd.DataFrame(cell_type_masks).transpose()
 
         # Convert the dictionary to a DataFrame with a SparseDtype
-        cell_type_masks_df = (
-            pd.DataFrame(cell_type_masks)
-            .astype(pd.SparseDtype("bool", fill_value=False))
-            .transpose()
-        )
+        # cell_type_masks_df = (
+        #     pd.DataFrame(cell_type_masks)
+        #     .astype(pd.SparseDtype("bool", fill_value=False))
+        #     .transpose()
+        # )
 
         # then build the mask matrix of the sample
-        # mask_matrix = cell_type_masks_df.loc[sample_cell_types].values
+        mask_matrix = cell_type_masks_df.loc[sample_cell_types].values
 
         # Build the mask matrix of the sample using the sparse DataFrame
         # This should still work with `.loc` and will keep the sparsity of the data
-        mask_matrix = cell_type_masks_df.loc[sample_cell_types].sparse.to_coo().tocsr()
+        # mask_matrix = cell_type_masks_df.loc[sample_cell_types].sparse.to_coo().tocsr()
 
         if radius is not None:
             nn = NearestNeighbors(radius=radius)
