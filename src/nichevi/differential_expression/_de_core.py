@@ -89,12 +89,14 @@ def _niche_de_core(
             "group1_group2": [],
             "group1_niche1": [],
             "niche1_group2": [],
+            "niche1_niche2": [],
         }
         if count_corruption is None
         else {
             "group1_group2": [],
             "group1_corrupted1": [],
             "corrupted1_group2": [],
+            "corrupted1_corrupted2": [],
         }
     )
 
@@ -155,12 +157,13 @@ def _niche_de_core(
             )
         else:
             cell_idx2 = (adata.obs[groupby] == group2).to_numpy().ravel()
-            # neighbors_idx2 = _get_nonzero_indices_from_rows(A, cell_idx2)
+            neighbors_idx2 = _get_nonzero_indices_from_rows(A, cell_idx2)
             DE_indices = (
                 {
                     "group1_group2": [cell_idx1, cell_idx2],
                     "group1_niche1": [cell_idx1, neighbors_idx1],
                     "niche1_group2": [neighbors_idx1, cell_idx2],
+                    "niche1_niche2": [neighbors_idx1, neighbors_idx2],
                     # "group2_niche2": [cell_idx2, neighbors_idx2],
                 }
                 if count_corruption is None
@@ -168,6 +171,7 @@ def _niche_de_core(
                     "group1_group2": [cell_idx1, cell_idx2],
                     "group1_corrupted1": [cell_idx1, neighbors_idx1],
                     "corrupted1_group2": [neighbors_idx1, cell_idx2],
+                    "corrupted1_corrupted2": [neighbors_idx1, neighbors_idx2],
                 }
             )
             DE_group_names = (
@@ -175,6 +179,7 @@ def _niche_de_core(
                     "group1_group2": [g1, group2],
                     "group1_niche1": [g1, f"{g1}_neighbors"],
                     "niche1_group2": [f"{g1}_neighbors", group2],
+                    "niche1_niche2": [f"{g1}_neighbors", f"{group2}_neighbors"],
                     # "group2_niche2": [group2, f"{group2}_neighbors"],
                 }
                 if count_corruption is None
@@ -182,6 +187,7 @@ def _niche_de_core(
                     "group1_group2": [g1, group2],
                     "group1_corrupted1": [g1, f"{g1}_corrupted"],
                     "corrupted1_group2": [f"{g1}_corrupted", group2],
+                    "corrupted1_corrupted2": [f"{g1}_corrupted", f"{group2}_corrupted"],
                 }
             )
 
