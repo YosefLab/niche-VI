@@ -155,29 +155,36 @@ def adjusted_nearest_neighbors(
         cell_type_masks_df = pd.DataFrame(cell_type_masks).transpose()
 
         # Convert the dictionary to a DataFrame with a SparseDtype
-        # cell_type_masks_df = (
-        #     pd.DataFrame(cell_type_masks)
-        #     .astype(pd.SparseDtype("bool", fill_value=False))
-        #     .transpose()
+        # cell_type_masks_df_sparse = (
+        #     pd.DataFrame(cell_type_masks).astype(pd.SparseDtype("bool", fill_value=False)).transpose()
         # )
 
         # then build the mask matrix of the sample
         mask_matrix = cell_type_masks_df.loc[sample_cell_types].values
 
+        # get the size in MB of the mask matrix cell_type_masks_df.loc[sample_cell_types]:
+        # print(f"Size of the mask matrix (dense): {mask_matrix.nbytes / 1e6:.2f} MB")
+
         # Build the mask matrix of the sample using the sparse DataFrame
         # This should still work with `.loc` and will keep the sparsity of the data
-        # mask_matrix = cell_type_masks_df.loc[sample_cell_types].sparse.to_coo().tocsr()
+        # mask_matrix_sparse = cell_type_masks_df_sparse.loc[sample_cell_types].sparse.to_coo().tocsr()
+
+        # Size of the sparse matrix in MB
+        # sparse_size_mb = (
+        #     mask_matrix_sparse.data.nbytes  # Size of the non-zero data
+        #     + mask_matrix_sparse.indptr.nbytes  # Size of the index pointer array
+        #     + mask_matrix_sparse.indices.nbytes  # Size of the indices array
+        # ) / (1024**2)
+        # print(f"Size of the mask matrix (sparse): {sparse_size_mb:.2f} MB")
 
         if radius is not None:
             nn = NearestNeighbors(radius=radius)
             nn.fit(sample_coord)
             A = nn.radius_neighbors_graph(sample_coord)
         elif k_nn is not None:
-            print(f"Computing {k_nn} nearest neighbors for sample {sample}")
             nn = NearestNeighbors(n_neighbors=k_nn + 1)
             nn.fit(sample_coord)
             A = nn.kneighbors_graph(sample_coord)
-            print(f"Computed {k_nn} nearest neighbors for sample {sample}")
         else:
             raise ValueError("Either radius or k_nn must be provided.")
 
