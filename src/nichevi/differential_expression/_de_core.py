@@ -3,6 +3,7 @@ from collections.abc import Iterable as IterableClass
 import anndata as ad
 import numpy as np
 import pandas as pd
+from rich import print
 from scipy.sparse import csr_matrix
 from scvi import REGISTRY_KEYS
 
@@ -12,6 +13,8 @@ from scvi.utils import track
 
 from nichevi import NICHEVI_REGISTRY_KEYS
 
+from ._classifier import _gaussian_process_classifier
+from ._dataclass import DifferentialExpressionResults
 from ._de_utils import _get_nonzero_indices_from_rows, adjusted_nearest_neighbors, corrupt_counts
 from ._differential import DifferentialComputation
 
@@ -42,8 +45,10 @@ def _niche_de_core(
     radius=50,
     k_nn=None,
     count_corruption: float | None = None,
+    lfc_select: str = "lfc_median",
+    n_restarts_optimizer_gpc: int = 10,
     **kwargs,
-):
+) -> DifferentialExpressionResults:
     """Internal function for DE interface."""
     adata = adata_manager.adata
     # adata = adata
@@ -84,21 +89,19 @@ def _niche_de_core(
     )
 
     print("Computing DE...")
-    DE_results = (
-        {
+    if group2 is not None:
+        DE_results = {
             "group1_group2": [],
-            "group1_niche1": [],
-            "niche1_group2": [],
-            "niche1_niche2": [],
+            "group1_neighbors1": [],
+            "neighbors1_group2": [],
+            "neighbors1_neighbors2": [],
         }
-        if count_corruption is None
-        else {
+    else:
+        DE_results = {
             "group1_group2": [],
-            "group1_corrupted1": [],
-            "corrupted1_group2": [],
-            "corrupted1_corrupted2": [],
+            "group1_neighbors1": [],
+            "neighbors1_group2": [],
         }
-    )
 
     dc = DifferentialComputation(model_fn, representation_fn, adata_manager)
     for g1 in track(
@@ -129,19 +132,11 @@ def _niche_de_core(
             cell_idx2 = ~cell_idx1
             # neighbors_idx2 = None
 
-            DE_indices = (
-                {
-                    "group1_group2": [cell_idx1, cell_idx2],
-                    "group1_corrupted1": [cell_idx1, neighbors_idx1],
-                    "corrupted1_group2": [neighbors_idx1, cell_idx2],
-                }
-                if count_corruption
-                else {
-                    "group1_group2": [cell_idx1, cell_idx2],
-                    "group1_niche1": [cell_idx1, neighbors_idx1],
-                    "niche1_group2": [neighbors_idx1, cell_idx2],
-                }
-            )
+            DE_indices = {
+                "group1_group2": [cell_idx1, cell_idx2],
+                "group1_neighbors1": [cell_idx1, neighbors_idx1],
+                "neighbors1_group2": [neighbors_idx1, cell_idx2],
+            }
             DE_group_names = (
                 {
                     "group1_group2": [g1, "Rest"],
@@ -151,36 +146,25 @@ def _niche_de_core(
                 if count_corruption
                 else {
                     "group1_group2": [g1, "Rest"],
-                    "group1_niche1": [g1, f"{g1}_neighbors"],
-                    "niche1_group2": [f"{g1}_neighbors", "Rest"],
+                    "group1_neighbors1": [g1, f"{g1}_neighbors"],
+                    "neighbors1_group2": [f"{g1}_neighbors", "Rest"],
                 }
             )
         else:
             cell_idx2 = (adata.obs[groupby] == group2).to_numpy().ravel()
             neighbors_idx2 = _get_nonzero_indices_from_rows(A, cell_idx2)
-            DE_indices = (
-                {
-                    "group1_group2": [cell_idx1, cell_idx2],
-                    "group1_niche1": [cell_idx1, neighbors_idx1],
-                    "niche1_group2": [neighbors_idx1, cell_idx2],
-                    "niche1_niche2": [neighbors_idx1, neighbors_idx2],
-                    # "group2_niche2": [cell_idx2, neighbors_idx2],
-                }
-                if count_corruption is None
-                else {
-                    "group1_group2": [cell_idx1, cell_idx2],
-                    "group1_corrupted1": [cell_idx1, neighbors_idx1],
-                    "corrupted1_group2": [neighbors_idx1, cell_idx2],
-                    "corrupted1_corrupted2": [neighbors_idx1, neighbors_idx2],
-                }
-            )
+            DE_indices = {
+                "group1_group2": [cell_idx1, cell_idx2],
+                "group1_neighbors1": [cell_idx1, neighbors_idx1],
+                "neighbors1_group2": [neighbors_idx1, cell_idx2],
+                "neighbors1_neighbors2": [neighbors_idx1, neighbors_idx2],
+            }
             DE_group_names = (
                 {
                     "group1_group2": [g1, group2],
-                    "group1_niche1": [g1, f"{g1}_neighbors"],
-                    "niche1_group2": [f"{g1}_neighbors", group2],
-                    "niche1_niche2": [f"{g1}_neighbors", f"{group2}_neighbors"],
-                    # "group2_niche2": [group2, f"{group2}_neighbors"],
+                    "group1_neighbors1": [g1, f"{g1}_neighbors"],
+                    "neighbors1_group2": [f"{g1}_neighbors", group2],
+                    "neighbors1_neighbors2": [f"{g1}_neighbors", f"{group2}_neighbors"],
                 }
                 if count_corruption is None
                 else {
@@ -241,7 +225,25 @@ def _niche_de_core(
         group_DE_result = DE_results[groups]
         DE_results[groups] = pd.concat(group_DE_result, axis=0).reindex(idx_g1_g2)
 
-    return DE_results
+    # fit the classifier
+    lfc_g1_g2 = DE_results["group1_group2"][lfc_select]
+    lfc_n1_g2 = DE_results["neighbors1_group2"][lfc_select]
+    fdr_g1_n1 = DE_results["group1_neighbors1"][f"is_de_fdr_{fdr}"].copy()
+    fdr_g1_n1.loc[DE_results["group1_neighbors1"][lfc_select] < 0] = False
+
+    print("Computing g1 confidence scores...")
+    gpc_ = _gaussian_process_classifier(lfc_g1_g2, lfc_n1_g2, fdr_g1_n1, n_restarts_optimizer=n_restarts_optimizer_gpc)
+
+    for groups in list(DE_results.keys()):
+        DE_results[groups]["proba_de_g1_n1"] = gpc_.gene_probas_
+
+    return DifferentialExpressionResults(
+        gpc=gpc_,
+        g1_g2=DE_results["group1_group2"],
+        g1_n1=DE_results["group1_neighbors1"],
+        n1_g2=DE_results["neighbors1_group2"],
+        n1_n2=DE_results["neighbors1_neighbors2"] if "neighbors1_neighbors2" in DE_results else None,
+    )
 
 
 def _dummy_adata(
