@@ -47,6 +47,7 @@ def _niche_de_core(
     count_corruption: float | None = None,
     lfc_select: str = "lfc_median",
     n_restarts_optimizer_gpc: int = 10,
+    return_neighbors_idx: bool = True,
     **kwargs,
 ) -> DifferentialExpressionResults:
     """Internal function for DE interface."""
@@ -76,17 +77,21 @@ def _niche_de_core(
     # cell_labels = adata.obs[label_key].values
     # cell_coordinates = adata.obsm[cell_coordinates_key]
 
-    print("Computing nearest neighbors...")
+    if "adjusted_A" in adata.uns.keys():
+        A = adata.uns["adjusted_A"]
+    else:
+        print("Computing adjusted nearest neighbors...")
+        A = adjusted_nearest_neighbors(
+            # adata,
+            cell_samples=cell_samples,
+            cell_coordinates=cell_coordinates,
+            cell_labels=cell_labels,
+            radius=radius,
+            k_nn=k_nn,
+            return_sparse=True,
+        )
 
-    A = adjusted_nearest_neighbors(
-        adata,
-        cell_samples=cell_samples,
-        cell_coordinates=cell_coordinates,
-        cell_labels=cell_labels,
-        radius=radius,
-        k_nn=k_nn,
-        return_sparse=True,
-    )
+        adata.uns["adjusted_A"] = A
 
     print("Computing DE...")
     if group2 is not None:
@@ -242,7 +247,11 @@ def _niche_de_core(
         g1_g2=DE_results["group1_group2"],
         g1_n1=DE_results["group1_neighbors1"],
         n1_g2=DE_results["neighbors1_group2"],
-        n1_n2=DE_results["neighbors1_neighbors2"] if "neighbors1_neighbors2" in DE_results else None,
+        n1_n2=DE_results["neighbors1_neighbors2"]
+        if "neighbors1_neighbors2" in DE_results
+        else None,
+        n1_index=neighbors_idx1 if return_neighbors_idx else None,
+        n2_index=neighbors_idx2 if return_neighbors_idx and group2 != "Rest" else None,
     )
 
 

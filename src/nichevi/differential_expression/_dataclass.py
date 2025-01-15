@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -9,15 +9,17 @@ from sklearn.gaussian_process import GaussianProcessClassifier
 
 @dataclass
 class DifferentialExpressionResults:
-    """Dataclass for storing the results of the differential expression analysis, including the GP classifier"""
+    """Dataclass for storing the results of the differential expression analysis,
+    including the GP classifier
+    """
 
     gpc: GaussianProcessClassifier
     g1_g2: pd.DataFrame
     g1_n1: pd.DataFrame
     n1_g2: pd.DataFrame
-    n1_n2: Optional[pd.DataFrame] = field(default=None)
-    n1_index: Optional[np.array] = field(default=None)
-    n2_index: Optional[np.array] = field(default=None)
+    n1_n2: Union[pd.DataFrame, None] = field(default=None)
+    n1_index: Union[np.array, None] = field(default=None)
+    n2_index: Union[np.array, None] = field(default=None)
 
     def gpc_info(self):
         """Print the log marginal likelihood value and the kernel of the Gaussian Process Classifier"""

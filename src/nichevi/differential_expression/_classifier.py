@@ -53,17 +53,17 @@ def _gaussian_process_classifier(
 
 def plot_DE_results(
     gpc: GaussianProcessClassifier,
-    X: Optional[pd.DataFrame] = None,
-    y: Optional[pd.Series] = None,
-    filter: Optional[Iterable] = None,
-    background_filter: Optional[Iterable] = None,
+    X: pd.DataFrame | None = None,
+    y: pd.Series | None = None,
+    filter: Iterable | None = None,
+    background_filter: Iterable | None = None,
     markersize: int = 50,
     fontsize: int = 10,
     chosen_colormap: str = "seismic",
-    path_to_save: Optional[str] = None,
+    path_to_save: str | None = None,
     dpi: int = 1000,
     margin: float = 0.1,
-    manual_limits: Optional[tuple] = None,
+    manual_limits: tuple | None = None,
 ) -> None:
     import matplotlib.cm as cm
     import matplotlib.colors as mcolors
