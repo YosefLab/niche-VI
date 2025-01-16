@@ -49,7 +49,6 @@ def _niche_de_core(
 ) -> DifferentialExpressionResults:
     """Internal function for DE interface."""
     adata = adata_manager.adata
-    # adata = adata
     if group1 is None and idx1 is None:
         group1 = adata.obs[groupby].astype("category").cat.categories.tolist()
         if len(group1) == 1:
@@ -69,10 +68,6 @@ def _niche_de_core(
     cell_samples = adata_manager.get_from_registry(NICHEVI_REGISTRY_KEYS.SAMPLE_KEY)
     cell_labels = adata_manager.get_from_registry(REGISTRY_KEYS.LABELS_KEY)
     cell_coordinates = adata_manager.get_from_registry(NICHEVI_REGISTRY_KEYS.CELL_COORDINATES_KEY)
-
-    # cell_samples = adata.obs[sample_key].values
-    # cell_labels = adata.obs[label_key].values
-    # cell_coordinates = adata.obsm[cell_coordinates_key]
 
     if "adjusted_A" in adata.uns.keys():
         A = adata.uns["adjusted_A"]
@@ -118,9 +113,12 @@ def _niche_de_core(
             x_uncorr = adata.layers["counts"][cell_idx1]
             x_niche1 = A[cell_idx1] @ adata.layers["counts"]
 
-            x_corr = corrupt_counts(x_uncorr, x_niche1, target_corruption=count_corruption, rounding="random")
+            x_corr = corrupt_counts(
+                x_uncorr, x_niche1, target_corruption=count_corruption, rounding="random"
+            )
 
-            # Trick to avoid double counting. Only works if len(neighbors_idx1) > len(cell_idx1) which I assume is the case
+            # Trick to avoid double counting. Only works if len(neighbors_idx1) > len(cell_idx1)
+            # which I assume is the case
             neighbors_idx1 = neighbors_idx1[: cell_idx1.sum()]
 
             # Save the original counts of this index
@@ -233,8 +231,13 @@ def _niche_de_core(
     fdr_g1_n1 = DE_results["group1_neighbors1"][f"is_de_fdr_{fdr}"].copy()
     fdr_g1_n1.loc[DE_results["group1_neighbors1"][lfc_select] < 0] = False
 
+    if fdr_g1_n1.sum() == 0:
+        raise ValueError("No DE genes found between group1 and neighbors1.")
+
     print("Computing g1 confidence scores...")
-    gpc_ = _gaussian_process_classifier(lfc_g1_g2, lfc_n1_g2, fdr_g1_n1, n_restarts_optimizer=n_restarts_optimizer_gpc)
+    gpc_ = _gaussian_process_classifier(
+        lfc_g1_g2, lfc_n1_g2, fdr_g1_n1, n_restarts_optimizer=n_restarts_optimizer_gpc
+    )
 
     for groups in list(DE_results.keys()):
         DE_results[groups]["proba_de_g1_n1"] = gpc_.gene_probas_
@@ -306,7 +309,9 @@ def _dummy_adata(
     if not isinstance(x_niche1, csr_matrix):
         x_niche1 = csr_matrix(x_niche1)
 
-    x_corr = corrupt_counts(x_uncorr, x_niche1, target_corruption=count_corruption, rounding="random")
+    x_corr = corrupt_counts(
+        x_uncorr, x_niche1, target_corruption=count_corruption, rounding="random"
+    )
 
     n_obs = (
         2 * cell_idx1.sum() + cell_idx2.sum() + len(neighbors_idx1)
@@ -326,19 +331,25 @@ def _dummy_adata(
     adata_dummy.obs[groupby].iloc[: cell_idx1.sum()] = group1
 
     adata_dummy.X[cell_idx1.sum() : 2 * cell_idx1.sum(), :] = x_corr
-    adata_dummy.obs.iloc[cell_idx1.sum() : 2 * cell_idx1.sum()] = adata.obs.iloc[cell_idx1.sum() : 2 * cell_idx1.sum()]
+    adata_dummy.obs.iloc[cell_idx1.sum() : 2 * cell_idx1.sum()] = adata.obs.iloc[
+        cell_idx1.sum() : 2 * cell_idx1.sum()
+    ]
     adata_dummy.obs[groupby].iloc[cell_idx1.sum() : 2 * cell_idx1.sum()] = f"{group1}_corrupted"
 
     if group2 is not None:
-        adata_dummy.X[2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum(), :] = adata.layers["counts"][
-            cell_idx2
-        ]
-        adata_dummy.obs.iloc[2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum()] = adata.obs.iloc[
+        adata_dummy.X[2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum(), :] = (
+            adata.layers["counts"][cell_idx2]
+        )
+        adata_dummy.obs.iloc[2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum()] = (
+            adata.obs.iloc[2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum()]
+        )
+        adata_dummy.obs[groupby].iloc[
             2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum()
-        ]
-        adata_dummy.obs[groupby].iloc[2 * cell_idx1.sum() : 2 * cell_idx1.sum() + cell_idx2.sum()] = group2
+        ] = group2
 
-    adata_dummy.X[2 * cell_idx1.sum() + cell_idx2.sum() :, :] = adata.layers["counts"][neighbors_idx1]
+    adata_dummy.X[2 * cell_idx1.sum() + cell_idx2.sum() :, :] = adata.layers["counts"][
+        neighbors_idx1
+    ]
     adata_dummy.obs.iloc[2 * cell_idx1.sum() + cell_idx2.sum() :] = adata.obs.iloc[neighbors_idx1]
     adata_dummy.obs[groupby].iloc[2 * cell_idx1.sum() + cell_idx2.sum() :] = f"{group1}_neighbors"
 

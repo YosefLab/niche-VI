@@ -1,6 +1,5 @@
 from typing import Literal
 
-import anndata as ad
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -62,7 +61,6 @@ def corrupt_counts(
 
 
 def adjusted_nearest_neighbors(
-    # adata: ad.AnnData,
     cell_samples: np.array,
     cell_coordinates: np.array,
     cell_labels: np.array,
@@ -72,10 +70,6 @@ def adjusted_nearest_neighbors(
 ):
     from scipy.sparse import block_diag
     from sklearn.neighbors import NearestNeighbors
-
-    # cell_types = adata.obs[labels].copy().values
-    # cell_coords = adata.obsm[cell_coordinates].copy()
-    # cell_samples = adata.obs[samples].copy().values
 
     adjacency_matrices = []
 

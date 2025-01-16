@@ -37,9 +37,9 @@ def _gaussian_process_classifier(
         axis=1,
     )
 
-    gpc = GaussianProcessClassifier(kernel=kernel, n_restarts_optimizer=n_restarts_optimizer, random_state=0).fit(
-        X, fdr_g1_n1
-    )
+    gpc = GaussianProcessClassifier(
+        kernel=kernel, n_restarts_optimizer=n_restarts_optimizer, random_state=0
+    ).fit(X, fdr_g1_n1)
 
     gpc.train_score_ = gpc.score(X, fdr_g1_n1)
     gpc.gene_probas_ = gpc.predict_proba(X)[:, 1]
@@ -152,7 +152,12 @@ def plot_DE_results(
     # Plot background points in light grey if background_filter is provided
     if background_filter is not None:
         disp.ax_.scatter(
-            X_background[:, 0], X_background[:, 1], c="lightgrey", edgecolor="none", s=markersize, alpha=0.3
+            X_background[:, 0],
+            X_background[:, 1],
+            c="lightgrey",
+            edgecolor="none",
+            s=markersize,
+            alpha=0.3,
         )
         for i, gene in enumerate(background_filter):
             ax.annotate(
@@ -167,7 +172,9 @@ def plot_DE_results(
 
     # Scatter plot with fixed colors for True (yellow) and False (blue)
     colors = np.where(fdr_g1_n1_display, "yellow", "green")
-    scatter = disp.ax_.scatter(X_display[:, 0], X_display[:, 1], c=colors, edgecolor="k", s=markersize)
+    scatter = disp.ax_.scatter(
+        X_display[:, 0], X_display[:, 1], c=colors, edgecolor="k", s=markersize
+    )
 
     # Manually add a colorbar for the decision boundary
     sm = plt.cm.ScalarMappable(cmap=chosen_colormap, norm=mcolors.Normalize(vmin=0, vmax=1))
@@ -195,7 +202,13 @@ def plot_DE_results(
             markersize=8,
         ),
         plt.Line2D(
-            [0], [0], marker="o", color="w", label="DE g1_g2 in Xenium", markerfacecolor="lightgrey", markersize=8
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            label="DE g1_g2 in Xenium",
+            markerfacecolor="lightgrey",
+            markersize=8,
         ),
     ]
     disp.ax_.legend(handles=legend_elements, loc="upper right")
