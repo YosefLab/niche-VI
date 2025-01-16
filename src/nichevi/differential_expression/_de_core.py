@@ -38,10 +38,7 @@ def _niche_de_core(
     batch_correction,
     fdr,
     silent,
-    ###### NicheSCVI specific ######
-    # sample_key="sample",
-    # cell_coordinates_key="spatial",
-    # label_key="cell_type",
+    ###### NicheVI specific ######
     radius=50,
     k_nn=None,
     count_corruption: float | None = None,

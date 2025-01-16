@@ -50,7 +50,7 @@ _SCVI_OBSERVED_LIB_SIZE = "_scvi_observed_lib_size"
 logger = logging.getLogger(__name__)
 
 
-class nicheSCVI(
+class nicheVI(
     EmbeddingMixin,
     NicheRNASeqMixin,
     NicheVAEMixin,
