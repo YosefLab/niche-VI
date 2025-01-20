@@ -66,7 +66,38 @@ addopts = [
 
 [tool.ruff]
 src = ["src"]
-line-length = 120
+line-length = 99
+indent-width = 4
+target-version = "py312"
+
+extend-include = ["*.ipynb"]
+
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+[tool.ruff.lint]
 select = [
     "F",  # Errors detected by Pyflakes
     "E",  # Error detected by Pycodestyle
@@ -79,12 +110,12 @@ select = [
     "BLE",  # flake8-blind-except
     "UP",  # pyupgrade
     "RUF100",  # Report unused noqa directives
+    "PT", # pytest style
+    "NPY", # numpy formatting
+    "TCH", # flake8-type-checking
+    "FA", # flake8-future-annotations
 ]
 ignore = [
-    # line too long -> we accept long comment lines; formatter gets rid of long code lines
-    "E501",
-    # Do not assign a lambda expression, use a def -> lambda expression assignments are convenient
-    "E731",
     # allow I, O, l as variable names -> I is the identity matrix
     "E741",
     # Missing docstring in public package
@@ -95,30 +126,47 @@ ignore = [
     "D107",
     # Errors from function calls in argument defaults. These are fine when the result is immutable.
     "B008",
-    # __magic__ methods are are often self-explanatory, allow missing docstrings
-    "D105",
     # first line should end with a period [Bug: doesn't work with single-line docstrings]
     "D400",
     # First line should be in imperative mood; try rephrasing
     "D401",
-    ## Disable one in each pair of mutually incompatible rules
-    # We don’t want a blank line before a class docstring
-    "D203",
     # We want docstrings to start immediately after the opening triple quote
     "D213",
+    # Raising ValueError is sufficient in tests.
+    "PT011",
+    # We support np.random functions.
+    "NPY002"
 ]
-extend-include = ["*.ipynb"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"docs/*" = ["I", "BLE001"]
+"tests/*" = ["D"]
+"*/__init__.py" = ["F401"]
+"src/scvi/__init__.py" = ["I"]
 
 [tool.ruff.format]
 docstring-code-format = true
+# Like Black, use double quotes for strings.
+quote-style = "double"
 
-[tool.ruff.pydocstyle]
-convention = "numpy"
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
 
-[tool.ruff.per-file-ignores]
-"docs/*" = ["I"]
-"tests/*" = ["D"]
-"*/__init__.py" = ["F401"]
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+[tool.jupytext]
+formats = "ipynb,md"
+
+[tool.ruff.lint.flake8-type-checking]
+exempt-modules = []
+strict = true
 
 [tool.cruft]
 skip = [

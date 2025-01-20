@@ -251,13 +251,17 @@ class nicheVAE(VAE):
                 self.prior_mixture_k = prior_mixture_k
 
                 self.prior_means = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]))
-                self.prior_log_scales = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]))
+                self.prior_log_scales = torch.nn.Parameter(
+                    torch.zeros([prior_mixture_k, n_latent])
+                )
                 self.prior_logits = torch.nn.Parameter(torch.ones([prior_mixture_k]))
 
             else:
                 self.prior_mixture_k = prior_mixture_k
                 self.prior_means = torch.nn.Parameter(torch.randn([prior_mixture_k, n_latent]))
-                self.prior_log_scales = torch.nn.Parameter(torch.zeros([prior_mixture_k, n_latent]) - 1.0)
+                self.prior_log_scales = torch.nn.Parameter(
+                    torch.zeros([prior_mixture_k, n_latent]) - 1.0
+                )
                 self.prior_logits = torch.nn.Parameter(torch.ones([prior_mixture_k]))
 
         # #DESTVI
@@ -402,7 +406,9 @@ class nicheVAE(VAE):
         if cont_covs is None:
             decoder_input = z
         elif z.dim() != cont_covs.dim():
-            decoder_input = torch.cat([z, cont_covs.unsqueeze(0).expand(z.size(0), -1, -1)], dim=-1)
+            decoder_input = torch.cat(
+                [z, cont_covs.unsqueeze(0).expand(z.size(0), -1, -1)], dim=-1
+            )
         else:
             decoder_input = torch.cat([z, cont_covs], dim=-1)
 
@@ -438,7 +444,9 @@ class nicheVAE(VAE):
             )
 
         if self.dispersion == "gene-label":
-            px_r = linear(one_hot(y, self.n_labels), self.px_r)  # px_r gets transposed - last dimension is nb genes
+            px_r = linear(
+                one_hot(y, self.n_labels), self.px_r
+            )  # px_r gets transposed - last dimension is nb genes
         elif self.dispersion == "gene-batch":
             px_r = linear(one_hot(batch_index, self.n_batch), self.px_r)
         elif self.dispersion == "gene":
@@ -490,7 +498,9 @@ class nicheVAE(VAE):
                 u_prior_means = u_prior_means.expand(y.shape[0], -1, -1)
                 u_prior_scales = u_prior_scales.expand(y.shape[0], -1, -1)
             cats = Categorical(logits=u_prior_logits)
-            normal_dists = Independent(Normal(u_prior_means, u_prior_scales), reinterpreted_batch_ndims=1)
+            normal_dists = Independent(
+                Normal(u_prior_means, u_prior_scales), reinterpreted_batch_ndims=1
+            )
             pz = MixtureSameFamily(cats, normal_dists)
         else:
             pz = Normal(torch.zeros_like(z), torch.ones_like(z))
@@ -506,10 +516,14 @@ class nicheVAE(VAE):
             if self.batch_representation == "embedding":
                 niche_mean, niche_variance = self.niche_decoder(decoder_input, *categorical_input)
             else:  # one-hot
-                niche_mean, niche_variance = self.niche_decoder(decoder_input, batch_index, *categorical_input)
+                niche_mean, niche_variance = self.niche_decoder(
+                    decoder_input, batch_index, *categorical_input
+                )
 
         else:
-            niche_mean, niche_variance = self.niche_decoder(decoder_input, batch_index, *categorical_input)
+            niche_mean, niche_variance = self.niche_decoder(
+                decoder_input, batch_index, *categorical_input
+            )
 
         if self.niche_likelihood == "poisson":
             niche_expression = torch.distributions.Poisson(niche_variance)
@@ -603,10 +617,14 @@ class nicheVAE(VAE):
         niche_weights = tensors[NICHEVI_REGISTRY_KEYS.NICHE_COMPOSITION_KEY]
         niche_weights = (niche_weights > 0).float()
 
-        z1_mean_niche = tensors[NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY]  # batch times cell_types times n_latent
+        z1_mean_niche = tensors[
+            NICHEVI_REGISTRY_KEYS.Z1_MEAN_CT_KEY
+        ]  # batch times cell_types times n_latent
 
         reconst_loss_niche = (
-            -generative_outputs[NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION].log_prob(z1_mean_niche).sum(dim=(-1))
+            -generative_outputs[NICHEVI_MODULE_KEYS.P_NICHE_EXPRESSION]
+            .log_prob(z1_mean_niche)
+            .sum(dim=(-1))
         )
 
         masked_reconst_loss_niche = (reconst_loss_niche * niche_weights).sum(dim=-1)
@@ -622,12 +640,17 @@ class nicheVAE(VAE):
         composition_loss = -reconst_niche_composition.log_prob(true_niche_composition)
 
         _weighted_reconst_loss_cell = self.cell_rec_weight * reconst_loss_cell
-        _weighted_reconst_loss_niche = spatial_weight * self.niche_rec_weight * masked_reconst_loss_niche
+        _weighted_reconst_loss_niche = (
+            spatial_weight * self.niche_rec_weight * masked_reconst_loss_niche
+        )
         _weighted_composition_loss = spatial_weight * self.compo_rec_weight * composition_loss
         _weighted_kl_local = self.latent_kl_weight * weighted_kl_local
 
         loss = torch.mean(
-            _weighted_reconst_loss_cell + _weighted_reconst_loss_niche + _weighted_kl_local + _weighted_composition_loss
+            _weighted_reconst_loss_cell
+            + _weighted_reconst_loss_niche
+            + _weighted_kl_local
+            + _weighted_composition_loss
         )
 
         return NicheLossOutput(
@@ -644,7 +667,9 @@ class nicheVAE(VAE):
             niche_loss=masked_reconst_loss_niche,
             extra_metrics={
                 NICHEVI_MODULE_KEYS.NLL_NICHE_COMPOSITION_KEY: torch.mean(composition_loss),
-                NICHEVI_MODULE_KEYS.NLL_NICHE_EXPRESSION_KEY: torch.mean(masked_reconst_loss_niche),
+                NICHEVI_MODULE_KEYS.NLL_NICHE_EXPRESSION_KEY: torch.mean(
+                    masked_reconst_loss_niche
+                ),
                 NICHEVI_MODULE_KEYS.SPATIAL_WEIGHT_KEY: spatial_weight,
             },
         )

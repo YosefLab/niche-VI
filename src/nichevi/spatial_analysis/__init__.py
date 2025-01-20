@@ -6,6 +6,7 @@ from .metrics import (
 )
 from .visualization import (
     compute_jaccard,
+    get_gene_percentiles_list,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "compute_k_nn",
     "compute_jaccard",
     "_lisi_per_cell_type",
+    "get_gene_percentiles_list",
 ]

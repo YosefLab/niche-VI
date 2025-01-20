@@ -2,20 +2,17 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Literal
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 import torch
-from anndata import AnnData
 from rich import print
 from scvi import REGISTRY_KEYS, settings
-from scvi._types import MinifiedDataType
 from scvi.data import AnnDataManager
 from scvi.data._constants import _ADATA_MINIFY_TYPE_UNS_KEY, ADATA_MINIFY_TYPE
 from scvi.data._utils import _get_adata_minify_type
 from scvi.data.fields import (
-    BaseAnnDataField,
     CategoricalJointObsField,
     CategoricalObsField,
     LayerField,
@@ -43,6 +40,15 @@ from ._rnamixin import NicheRNASeqMixin
 from ._training_mixin import UnsupervisedTrainingMixin
 from ._vaemixin import NicheVAEMixin
 
+if TYPE_CHECKING:
+    from typing import Literal
+
+    from anndata import AnnData
+    from scvi._types import MinifiedDataType
+    from scvi.data.fields import (
+        BaseAnnDataField,
+    )
+
 _SCVI_LATENT_QZM = "_scvi_latent_qzm"
 _SCVI_LATENT_QZV = "_scvi_latent_qzv"
 _SCVI_OBSERVED_LIB_SIZE = "_scvi_observed_lib_size"
@@ -50,7 +56,7 @@ _SCVI_OBSERVED_LIB_SIZE = "_scvi_observed_lib_size"
 logger = logging.getLogger(__name__)
 
 
-class nicheSCVI(
+class nicheVI(
     EmbeddingMixin,
     NicheRNASeqMixin,
     NicheVAEMixin,
@@ -172,7 +178,9 @@ class nicheSCVI(
             use_size_factor_key = REGISTRY_KEYS.SIZE_FACTOR_KEY in self.adata_manager.data_registry
             library_log_means, library_log_vars = None, None
             if not use_size_factor_key and self.minified_data_type is None:
-                library_log_means, library_log_vars = _init_library_size(self.adata_manager, n_batch)
+                library_log_means, library_log_vars = _init_library_size(
+                    self.adata_manager, n_batch
+                )
             self.module = self._module_cls(
                 n_input=self.summary_stats.n_vars,
                 n_output_niche=self.summary_stats.n_latent_mean,
@@ -207,11 +215,6 @@ class nicheSCVI(
         niche_composition_key: str = "niche_composition",
         niche_indexes_key: str = "niche_indexes",
         niche_distances_key: str = "niche_distances",
-        ###########
-        niche_type_key: str | None = None,
-        niche_treshold: float | None = 0.2,
-        cell_type_for_niches: list[str] | None = None,
-        ###########
         log1p: bool = False,
     ):
         get_niche_indexes(
@@ -227,14 +230,6 @@ class nicheSCVI(
             adata=adata,
             cell_type_column=labels_key,
             indices_key=niche_indexes_key,
-            niche_composition_key=niche_composition_key,
-        )
-
-        get_cell_niches(
-            adata=adata,
-            cell_types_to_include=cell_type_for_niches,
-            treshold=niche_treshold,
-            niche_type_key=niche_type_key,
             niche_composition_key=niche_composition_key,
         )
 
@@ -417,6 +412,38 @@ class nicheSCVI(
         return torch.cat(ct_prediction).numpy()
 
     @torch.inference_mode()
+    def predict_niche_activation(
+        self,
+        adata: AnnData | None = None,
+        indices: np.ndarray | None = None,
+        batch_size: int | None = 1024,
+    ):
+        self._check_if_trained(warn=False)
+
+        adata = self._validate_anndata(adata)
+        scdl = self._make_data_loader(adata=adata, indices=indices, batch_size=batch_size)
+
+        ct_prediction = []
+        for tensors in scdl:
+            inference_inputs = self.module._get_inference_input(tensors)
+            outputs = self.module.inference(**inference_inputs)
+
+            batch_index = tensors[REGISTRY_KEYS.BATCH_KEY]
+            decoder_input = outputs["qz"].loc
+
+            # put batch_index in the same device as decoder_input
+            batch_index = batch_index.to(decoder_input.device)
+
+            p_m, p_v = self.module.niche_decoder(
+                decoder_input,
+                batch_index,
+            )  # no batch correction here
+
+            ct_prediction.append(p_m.detach().cpu())
+
+        return torch.cat(ct_prediction).numpy()
+
+    @torch.inference_mode()
     def get_niche_attention(
         self,
         adata: AnnData | None = None,
@@ -499,7 +526,8 @@ class nicheSCVI(
         attention_weights = attention_weights[:, 1:, 1:]
 
         token_attention_weights = {
-            token_name: attention_weights[:, token_idx, :] for token_name, token_idx in cell_type_to_int.items()
+            token_name: attention_weights[:, token_idx, :]
+            for token_name, token_idx in cell_type_to_int.items()
         }
 
         return token_attention_weights
@@ -611,34 +639,6 @@ def get_neighborhood_composition(
     return None
 
 
-def get_cell_niches(
-    adata: AnnData,
-    cell_types_to_include: list[str] | None = None,
-    treshold: float = 0.2,
-    niche_type_key: str = "niche_type",
-    niche_composition_key: str = "niche_composition",
-):
-    if cell_types_to_include is None:
-        pass
-
-    else:
-        composition_subet = adata.obsm[niche_composition_key][cell_types_to_include]
-
-        # for each cell, get the cell type with the highest proportion in its neighborhood
-
-        max_ct = composition_subet.max(axis=1)
-
-        # Create a new column with the name of the column containing the maximum value for each row
-        composition_subet["niche_assignment"] = composition_subet.idxmax(axis=1)
-
-        # Set 'max_column' to 'unknown' for rows where the maximum value is less than the threshold
-        composition_subet.loc[max_ct < treshold, "niche_assignment"] = "unknown"
-
-        adata.obs[niche_type_key] = composition_subet["niche_assignment"]
-
-    return None
-
-
 def get_average_latent_per_celltype(
     adata: AnnData,
     labels_key: str,
@@ -650,7 +650,9 @@ def get_average_latent_per_celltype(
     # for each cell, take the average of the latent space for each label, namely the label-averaged latent_mean obsm
 
     if latent_mean_key is None:
-        adata.obsm["qz1_m_niche_ct"] = np.empty((adata.n_obs, adata.obsm[latent_mean_key].shape[1]))
+        adata.obsm["qz1_m_niche_ct"] = np.empty(
+            (adata.n_obs, adata.obsm[latent_mean_key].shape[1])
+        )
 
         return None
 
@@ -671,16 +673,20 @@ def get_average_latent_per_celltype(
     integer_vector = np.vectorize(cell_type_to_int.get)(adata.obs[labels_key])
 
     # For each cell, get the cell types of its neighbors (as integers)
-    cell_types_in_the_neighborhood = np.vstack([integer_vector[niche_indexes[cell, :]] for cell in range(n_cells)])
+    cell_types_in_the_neighborhood = np.vstack(
+        [integer_vector[niche_indexes[cell, :]] for cell in range(n_cells)]
+    )
 
     dict_of_cell_type_indices = {}
 
     for cell_type, cell_type_idx in cell_type_to_int.items():
-        ct_row_indices, ct_col_indices = np.where(cell_types_in_the_neighborhood == cell_type_idx)  # [1]
+        ct_row_indices, ct_col_indices = np.where(
+            cell_types_in_the_neighborhood == cell_type_idx
+        )  # [1]
 
         # dict of cells:local index of the cells of cell_type in the neighborhood.
         result_dict = {}
-        for row_idx, col_idx in zip(ct_row_indices, ct_col_indices):
+        for row_idx, col_idx in zip(ct_row_indices, ct_col_indices, strict=False):
             result_dict.setdefault(row_idx, []).append(col_idx)
 
         dict_of_cell_type_indices[cell_type] = result_dict
@@ -698,7 +704,9 @@ def get_average_latent_per_celltype(
         ct_dict = dict_of_cell_type_indices[cell_type]
         # inner loop over every cell that has this cell type in its neighborhood.
         for cell_idx, neighbor_idxs in ct_dict.items():
-            z1_mean_niches_ct[cell_idx, cell_type_idx, :] = np.mean(z1_mean_niches[cell_idx, neighbor_idxs, :], axis=0)
+            z1_mean_niches_ct[cell_idx, cell_type_idx, :] = np.mean(
+                z1_mean_niches[cell_idx, neighbor_idxs, :], axis=0
+            )
 
     adata.obsm[latent_mean_ct_key] = z1_mean_niches_ct
 

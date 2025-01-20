@@ -42,6 +42,7 @@ class NicheRNASeqMixin(RNASeqMixin):
         k_nn: int | None = None,
         count_corruption: float | None = None,
         niche_mode: bool = True,
+        n_restarts_optimizer_gpc: int = 10,
         **kwargs,
     ) -> pd.DataFrame:
         r"""A unified method for differential expression analysis.
@@ -124,6 +125,7 @@ class NicheRNASeqMixin(RNASeqMixin):
                 radius=radius,
                 k_nn=k_nn,
                 count_corruption=count_corruption,
+                n_restarts_optimizer_gpc=n_restarts_optimizer_gpc,
                 **kwargs,
             )
 

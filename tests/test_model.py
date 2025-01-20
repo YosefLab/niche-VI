@@ -3,7 +3,7 @@ import numpy as np
 # import pytest
 from scvi.data import _constants, synthetic_iid
 
-from nichevi import nicheSCVI
+from nichevi import nicheVI
 
 N_LAYERS = 1
 N_LATENT = 15
@@ -44,13 +44,13 @@ def test_nichevi():
         "niche_distances_key": "niche_distances",
     }
 
-    nicheSCVI.preprocessing_anndata(
+    nicheVI.preprocessing_anndata(
         adata,
         k_nn=K_NN,
         **setup_kwargs,
     )
 
-    nicheSCVI.setup_anndata(
+    nicheVI.setup_anndata(
         adata,
         layer="counts",
         batch_key="batch",
@@ -74,7 +74,7 @@ def test_nichevi():
 
     setup_dict = niche_setup["r0_kl0_c0_n0"]
 
-    nichevae = nicheSCVI(
+    nichevae = nicheVI(
         adata,
         cell_rec_weight=setup_dict["cell_rec_weight"],
         latent_kl_weight=setup_dict["latent_kl_weight"],
@@ -132,7 +132,7 @@ def test_nichevi():
     nichevae.differential_expression(
         groupby="labels",
         group1="label_1",
-        group2="label_2",
+        # group2="label_2",
         batch_correction=False,
         # sample_key="batch",
         # cell_coordinates_key="coordinates",
@@ -140,6 +140,7 @@ def test_nichevi():
         radius=None,
         k_nn=5,
         count_corruption=None,
+        fdr_target=1,
     )
     nichevae.differential_expression(
         groupby="labels",
@@ -152,9 +153,10 @@ def test_nichevi():
         radius=50,
         k_nn=None,
         count_corruption=None,
+        fdr_target=1,
     )
 
 
 test_nichevi()
 
-print("nicheSCVI test passed")
+print("nicheVI test passed")

@@ -1,8 +1,8 @@
 import inspect
 import logging
 import warnings
-from collections.abc import Sequence
-from typing import Callable, Literal, Optional, Union
+from collections.abc import Callable, Sequence
+from typing import Literal, Optional, Union
 
 import numpy as np
 from scvi import REGISTRY_KEYS, settings
@@ -39,10 +39,10 @@ class DifferentialComputation(DifferentialComputation):
 
     def get_bayes_factors(
         self,
-        idx1: Union[list[bool], np.ndarray],
-        idx2: Union[list[bool], np.ndarray],
+        idx1: list[bool] | np.ndarray,
+        idx2: list[bool] | np.ndarray,
         mode: Literal["vanilla", "change"] = "vanilla",
-        batchid1: Optional[Sequence[Union[Number, str]]] = None,
+        batchid1: Sequence[Number | str] | None = None,
         batchid2: Optional[Sequence[Union[Number, str]]] = None,
         use_observed_batches: Optional[bool] = False,
         n_samples: int = 5000,

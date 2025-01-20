@@ -1,10 +1,8 @@
 from typing import Literal
 
-import anndata as ad
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import scipy.sparse as sp
 from scipy.sparse import csr_matrix
 
 
@@ -62,71 +60,7 @@ def corrupt_counts(
     return x_corr
 
 
-# def corrupt_counts(
-#     adata: ad.AnnData,
-#     niche_indexes_key: str,
-#     niche_distances_key: str,
-#     use_layer: str | None = None,
-#     add_layer: str = "corrupted_counts",
-#     k_nn: int = 7,
-#     bandwidth: Literal["mean", "median", "none"] = "median",
-#     save_weights: bool = False,
-#     target_sum: float = 1e4,
-#     spatial_weight: float = 1.0,
-#     log1p: bool = False,
-# ):
-#     distance_matrix = adata.obsm[niche_distances_key][:, :k_nn]
-#     idx = adata.obsm[niche_indexes_key][:, :k_nn]
-
-#     if bandwidth == "mean":
-#         bandwidth = np.mean(np.min(distance_matrix, axis=1))
-#     elif bandwidth == "median":
-#         # bandwidth = np.median(np.min(distance_matrix, axis=1))
-#         bandwidth = np.median(distance_matrix, axis=1)
-#     else:
-#         bandwidth = np.ones(distance_matrix.shape[0])
-
-#     if use_layer is not None:
-#         counts = adata.layers[use_layer].copy()
-#     else:
-#         counts = adata.X.copy()
-
-#     if sp.issparse(counts):
-#         counts = counts.toarray()
-
-#     _exp_argument = -((distance_matrix / bandwidth[:, None]) ** 2)
-#     _exp_argument = np.exp(_exp_argument)
-#     _exp_argument = _exp_argument / np.sum(_exp_argument, axis=1)[:, None]
-
-#     _normalized_counts = normalize_counts(counts, target_sum=target_sum)
-
-#     weighted_neighbors = np.einsum("ij,ijk->ik", _exp_argument, _normalized_counts[idx])
-
-#     # _normalized_neighbors_counts = normalize_counts(
-#     #     weighted_neighbors, target_sum=target_sum
-#     # )
-
-#     corrupted_counts = (
-#         _normalized_counts + spatial_weight * weighted_neighbors
-#         # _normalized_neighbors_counts
-#     )
-
-#     _normalized_corr_counts = normalize_counts(corrupted_counts, target_sum=target_sum)
-
-#     corrupted_counts = np.log1p(_normalized_corr_counts)
-#     unc_counts = np.log1p(_normalized_counts)
-
-#     adata.layers[add_layer] = csr_matrix(corrupted_counts)
-#     adata.layers["uncorrupted_counts"] = csr_matrix(unc_counts)
-
-#     if save_weights:
-#         adata.obsm["corruption_weights"] = _exp_argument
-
-#     return None
-
-
 def adjusted_nearest_neighbors(
-    adata: ad.AnnData,
     cell_samples: np.array,
     cell_coordinates: np.array,
     cell_labels: np.array,
@@ -137,51 +71,69 @@ def adjusted_nearest_neighbors(
     from scipy.sparse import block_diag
     from sklearn.neighbors import NearestNeighbors
 
-    # cell_types = adata.obs[labels].copy().values
-    # cell_coords = adata.obsm[cell_coordinates].copy()
-    # cell_samples = adata.obs[samples].copy().values
-
     adjacency_matrices = []
 
     for sample in np.unique(cell_samples):
-        mask = np.squeeze(cell_samples == sample, axis=1)
-        sample_coord = cell_coordinates[mask]
-        sample_cell_types = np.squeeze(cell_labels[mask], axis=1)
+        mask = np.squeeze(cell_samples == sample, axis=1)  # n_cells
+        sample_coord = cell_coordinates[mask]  # n_cells_sample_i x 2
+        sample_cell_types = np.squeeze(cell_labels[mask], axis=1)  # n_cells_sample_i
 
         # build a dict of masks for each cell type
-        cell_type_masks = {cell_type: sample_cell_types != cell_type for cell_type in np.unique(sample_cell_types)}
+        cell_type_masks = {
+            cell_type: sample_cell_types == cell_type for cell_type in np.unique(sample_cell_types)
+        }  # change to equal!!
 
         # make it a df
-        cell_type_masks_df = pd.DataFrame(cell_type_masks).transpose()
+        cell_type_masks_df = pd.DataFrame(
+            cell_type_masks
+        ).transpose()  # n_cell_types x n_cells_sample_i
 
-        # Convert the dictionary to a DataFrame with a SparseDtype
-        # cell_type_masks_df = (
-        #     pd.DataFrame(cell_type_masks)
-        #     .astype(pd.SparseDtype("bool", fill_value=False))
-        #     .transpose()
-        # )
+        # # # then build the mask matrix of the sample
+        # mask_matrix = cell_type_masks_df.loc[
+        #     sample_cell_types
+        # ].values  # n_cells_sample_i x n_cells_sample_i
 
-        # then build the mask matrix of the sample
-        mask_matrix = cell_type_masks_df.loc[sample_cell_types].values
+        # get the size in MB of the mask matrix cell_type_masks_df.loc[sample_cell_types]:
+        # print(f"Size of the mask matrix (dense): {mask_matrix.nbytes / 1e6:.2f} MB")
 
-        # Build the mask matrix of the sample using the sparse DataFrame
-        # This should still work with `.loc` and will keep the sparsity of the data
-        # mask_matrix = cell_type_masks_df.loc[sample_cell_types].sparse.to_coo().tocsr()
+        # Size of the sparse matrix in MB
+        # sparse_size_mb = (
+        #     mask_matrix_sparse.data.nbytes  # Size of the non-zero data
+        #     + mask_matrix_sparse.indptr.nbytes  # Size of the index pointer array
+        #     + mask_matrix_sparse.indices.nbytes  # Size of the indices array
+        # ) / (1024**2)
+        # print(f"Size of the mask matrix (sparse): {sparse_size_mb:.2f} MB")
 
         if radius is not None:
             nn = NearestNeighbors(radius=radius)
             nn.fit(sample_coord)
             A = nn.radius_neighbors_graph(sample_coord)
         elif k_nn is not None:
-            print(f"Computing {k_nn} nearest neighbors for sample {sample}")
             nn = NearestNeighbors(n_neighbors=k_nn + 1)
             nn.fit(sample_coord)
             A = nn.kneighbors_graph(sample_coord)
-            print(f"Computed {k_nn} nearest neighbors for sample {sample}")
         else:
             raise ValueError("Either radius or k_nn must be provided.")
 
-        A_adjusted = A.multiply(mask_matrix)
+        A_adjusted = A.copy()
+        # Process each label type at once using CSR format
+        for ids in cell_type_masks_df.index:
+            # Get the mask of rows we want to modify
+            row_mask = np.isin(np.arange(A.shape[0]), ids)
+
+            # Process only the affected rows
+            for i in np.where(row_mask)[0]:
+                # Get row slice
+                row_start = A_adjusted.indptr[i]
+                row_end = A_adjusted.indptr[i + 1]
+
+                # Get columns that need to be zeroed (same label connections)
+                cols_to_zero = np.isin(A_adjusted.indices[row_start:row_end], ids)
+
+                # Zero out these connections
+                A_adjusted.data[row_start:row_end][cols_to_zero] = 0
+
+        # A_adjusted = A.multiply(mask_matrix)
 
         A_adjusted.eliminate_zeros()
 
