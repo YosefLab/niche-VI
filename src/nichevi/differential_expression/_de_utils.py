@@ -191,9 +191,7 @@ def adjusted_nearest_neighbors(
 
     row_counts = np.diff(adjacency_matrix.indptr)
     # print mean and std of number of neighbors with a sigma letter for the std, round to 2 decimals:
-    print(
-        f"Mean number of neighbors: {np.mean(row_counts):.1f} ± {np.std(row_counts):.1f}"
-    )
+    print(f"Mean number of neighbors: {np.mean(row_counts):.1f} ± {np.std(row_counts):.1f}")
 
     if return_sparse:
         return adjacency_matrix
@@ -226,9 +224,7 @@ def _fdr_de_prediction(posterior_probas: pd.Series, fdr: float = 0.05) -> pd.Ser
     sorted_pgs = posterior_probas.sort_values(ascending=False)
     cumulative_fdr = (1.0 - sorted_pgs).cumsum() / (1.0 + np.arange(len(sorted_pgs)))
     d = (cumulative_fdr <= fdr).sum()
-    is_pred_de = pd.Series(
-        np.zeros_like(cumulative_fdr).astype(bool), index=sorted_pgs.index
-    )
+    is_pred_de = pd.Series(np.zeros_like(cumulative_fdr).astype(bool), index=sorted_pgs.index)
     is_pred_de.iloc[:d] = True
     is_pred_de = is_pred_de.loc[original_index]
     return is_pred_de
