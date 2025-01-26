@@ -78,31 +78,7 @@ def adjusted_nearest_neighbors(
         sample_coord = cell_coordinates[mask]  # n_cells_sample_i x 2
         sample_cell_types = np.squeeze(cell_labels[mask], axis=1)  # n_cells_sample_i
 
-        # build a dict of masks for each cell type
-        cell_type_masks = {
-            cell_type: sample_cell_types == cell_type for cell_type in np.unique(sample_cell_types)
-        }  # change to equal!!
-
-        # make it a df
-        cell_type_masks_df = pd.DataFrame(
-            cell_type_masks
-        ).transpose()  # n_cell_types x n_cells_sample_i
-
-        # # # then build the mask matrix of the sample
-        # mask_matrix = cell_type_masks_df.loc[
-        #     sample_cell_types
-        # ].values  # n_cells_sample_i x n_cells_sample_i
-
-        # get the size in MB of the mask matrix cell_type_masks_df.loc[sample_cell_types]:
-        # print(f"Size of the mask matrix (dense): {mask_matrix.nbytes / 1e6:.2f} MB")
-
-        # Size of the sparse matrix in MB
-        # sparse_size_mb = (
-        #     mask_matrix_sparse.data.nbytes  # Size of the non-zero data
-        #     + mask_matrix_sparse.indptr.nbytes  # Size of the index pointer array
-        #     + mask_matrix_sparse.indices.nbytes  # Size of the indices array
-        # ) / (1024**2)
-        # print(f"Size of the mask matrix (sparse): {sparse_size_mb:.2f} MB")
+        # print(f"Sample {sample} has {sample_coord.shape[0]} cells")
 
         if radius is not None:
             nn = NearestNeighbors(radius=radius)
@@ -115,25 +91,19 @@ def adjusted_nearest_neighbors(
         else:
             raise ValueError("Either radius or k_nn must be provided.")
 
+        # Find rows and columns of non-zero entries
+        row_indices, col_indices = A.nonzero()
+
+        # Create a sparse mask of entries to zero out
+        # Only zero out entries where row and column have the same label
+        mask_matrix = np.where(sample_cell_types[row_indices] == sample_cell_types[col_indices])[0]
+
+        # get the size in GB of the mask matrix cell_type_masks_df.loc[sample_cell_types]:
+        # print(f"Size of the mask matrix (dense): {mask_matrix.nbytes / 1e9:.2f} GB")
+
         A_adjusted = A.copy()
-        # Process each label type at once using CSR format
-        for ids in cell_type_masks_df.index:
-            # Get the mask of rows we want to modify
-            row_mask = np.isin(np.arange(A.shape[0]), ids)
-
-            # Process only the affected rows
-            for i in np.where(row_mask)[0]:
-                # Get row slice
-                row_start = A_adjusted.indptr[i]
-                row_end = A_adjusted.indptr[i + 1]
-
-                # Get columns that need to be zeroed (same label connections)
-                cols_to_zero = np.isin(A_adjusted.indices[row_start:row_end], ids)
-
-                # Zero out these connections
-                A_adjusted.data[row_start:row_end][cols_to_zero] = 0
-
-        # A_adjusted = A.multiply(mask_matrix)
+        # Zero out these specific data entries
+        A_adjusted.data[mask_matrix] = 0
 
         A_adjusted.eliminate_zeros()
 
