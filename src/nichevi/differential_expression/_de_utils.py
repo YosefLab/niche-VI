@@ -112,6 +112,7 @@ def adjusted_nearest_neighbors(
     adjacency_matrix = block_diag(adjacency_matrices, format="csr")
 
     row_counts = np.diff(adjacency_matrix.indptr)
+    # print mean and std of number of neighbors with a sigma letter for the std, round to 2 decimals:
     print(f"Mean number of neighbors: {np.mean(row_counts):.1f} ± {np.std(row_counts):.1f}")
 
     if return_sparse:
