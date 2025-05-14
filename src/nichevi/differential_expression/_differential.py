@@ -2,7 +2,7 @@ import inspect
 import logging
 import warnings
 from collections.abc import Callable, Sequence
-from typing import Literal, Optional, Union
+from typing import Literal
 
 import numpy as np
 from scvi import REGISTRY_KEYS, settings
@@ -43,16 +43,16 @@ class DifferentialComputation(DifferentialComputation):
         idx2: list[bool] | np.ndarray,
         mode: Literal["vanilla", "change"] = "vanilla",
         batchid1: Sequence[Number | str] | None = None,
-        batchid2: Optional[Sequence[Union[Number, str]]] = None,
-        use_observed_batches: Optional[bool] = False,
+        batchid2: Sequence[Number | str] | None = None,
+        use_observed_batches: bool | None = False,
         n_samples: int = 5000,
         use_permutation: bool = False,
         m_permutation: int = 10000,
-        change_fn: Optional[Union[str, Callable]] = None,
-        m1_domain_fn: Optional[Callable] = None,
-        delta: Optional[float] = 0.5,
-        pseudocounts: Union[float, None] = 0.0,
-        cred_interval_lvls: Optional[Union[list[float], np.ndarray]] = None,
+        change_fn: str | Callable | None = None,
+        m1_domain_fn: Callable | None = None,
+        delta: float | None = 0.5,
+        pseudocounts: float | None = 0.0,
+        cred_interval_lvls: list[float] | np.ndarray | None = None,
     ) -> dict[str, np.ndarray]:
         r"""A unified method for differential expression inference.
 
@@ -206,7 +206,9 @@ class DifferentialComputation(DifferentialComputation):
         batchid1_vals = np.unique(scales_batches_1["batch"])
         batchid2_vals = np.unique(scales_batches_2["batch"])
 
-        create_pairs_from_same_batches = (set(batchid1_vals) == set(batchid2_vals)) and not use_observed_batches
+        create_pairs_from_same_batches = (
+            set(batchid1_vals) == set(batchid2_vals)
+        ) and not use_observed_batches
         if create_pairs_from_same_batches:
             # First case: same batch normalization in two groups
             logger.debug("Same batches in both cell groups")
@@ -290,7 +292,9 @@ class DifferentialComputation(DifferentialComputation):
             if m1_domain_fn is None:
 
                 def m1_domain_fn(samples):
-                    delta_ = delta if delta is not None else estimate_delta(lfc_means=samples.mean(0))
+                    delta_ = (
+                        delta if delta is not None else estimate_delta(lfc_means=samples.mean(0))
+                    )
                     logger.debug(f"Using delta ~ {delta_:.2f}")
                     # return np.abs(samples) >= delta_
                     samples_plus = samples >= delta_
@@ -301,13 +305,18 @@ class DifferentialComputation(DifferentialComputation):
             domain_fn_specs = inspect.getfullargspec(m1_domain_fn)
             if (len(change_fn_specs.args) != 2) | (len(domain_fn_specs.args) != 1):
                 raise ValueError(
-                    "change_fn should take exactly two parameters as inputs; m1_domain_fn one " "parameter."
+                    "change_fn should take exactly two parameters as inputs; m1_domain_fn one "
+                    "parameter."
                 )
             try:
                 change_distribution = change_fn(scales_1, scales_2)
                 # is_de = m1_domain_fn(change_distribution)
                 is_de_plus, is_de_minus = m1_domain_fn(change_distribution)
-                delta_ = estimate_delta(lfc_means=change_distribution.mean(0)) if delta is None else delta
+                delta_ = (
+                    estimate_delta(lfc_means=change_distribution.mean(0))
+                    if delta is None
+                    else delta
+                )
             except TypeError as err:
                 raise TypeError(
                     "change_fn or m1_domain_fn have has wrong properties."
@@ -322,7 +331,9 @@ class DifferentialComputation(DifferentialComputation):
                 samples=change_distribution,
                 credible_intervals_levels=cred_interval_lvls,
             )
-            change_distribution_props = {"lfc_" + key: val for (key, val) in change_distribution_props.items()}
+            change_distribution_props = {
+                "lfc_" + key: val for (key, val) in change_distribution_props.items()
+            }
 
             res = dict(
                 proba_de=proba_de,

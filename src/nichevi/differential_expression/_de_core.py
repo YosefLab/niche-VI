@@ -87,19 +87,17 @@ def _niche_de_core(
 
     print("Computing DE...")
     if group2 is not None:
-        DE_results = {
-            "group1_group2": [],
-            "group1_neighbors1": [],
-            "neighbors1_group2": [],
-            "neighbors1_neighbors2": [],
-        }
-    else:
-        DE_results = {
-            "group1_group2": [],
-            "group1_neighbors1": [],
-            "neighbors1_group2": [],
-        }
+        comparisons = [
+            "group1_group2",
+            "group1_neighbors1",
+            "neighbors1_group2",
+            "neighbors1_neighbors2",
+        ]
+        DE_results = {comparison: [] for comparison in comparisons}
 
+    else:
+        comparisons = ["group1_group2", "group1_neighbors1", "neighbors1_group2"]
+        DE_results = {comparison: [] for comparison in comparisons}
     dc = DifferentialComputation(model_fn, representation_fn, adata_manager)
     for g1 in track(
         group1,
@@ -175,6 +173,25 @@ def _niche_de_core(
                 }
             )
 
+        # Ensure fdr and delta are lists of the correct length
+        if isinstance(fdr, list):
+            assert len(fdr) == len(
+                comparisons
+            ), f"Mismatch: len(fdr)={len(fdr)}, expected={len(comparisons)}"
+        else:
+            fdr = [fdr] * len(comparisons)  # Convert to list of same value
+
+        if isinstance(delta, list):
+            assert len(delta) == len(
+                comparisons
+            ), f"Mismatch: len(delta)={len(delta)}, expected={len(comparisons)}"
+        else:
+            delta = [delta] * len(comparisons)  # Convert to list of same value
+
+        # Assign FDR and Delta values
+        DE_group_fdr = dict(zip(comparisons, fdr, strict=False))
+        DE_group_delta = dict(zip(comparisons, delta, strict=False))
+
         for comparison, [cell_idx_a, cell_idx_b] in DE_indices.items():
             print(f"Running DE for {comparison}")
 
@@ -182,10 +199,11 @@ def _niche_de_core(
                 cell_idx_a,
                 cell_idx_b,
                 mode=mode,
-                delta=delta,
+                delta=DE_group_delta[comparison],
                 batchid1=batchid1,
                 batchid2=batchid2,
                 use_observed_batches=not batch_correction,
+                test_mode="three",
                 **kwargs,
             )
 
@@ -197,7 +215,9 @@ def _niche_de_core(
             sort_key = "proba_de" if mode == "change" else "bayes_factor"
             res = res.sort_values(by=sort_key, ascending=False)
             if mode == "change":
-                res[f"is_de_fdr_{fdr}"] = _fdr_de_prediction(res["proba_de"], fdr=fdr)
+                res[f"is_de_fdr_{DE_group_fdr[comparison]}"] = _fdr_de_prediction(
+                    res["proba_de"], fdr=DE_group_fdr[comparison]
+                )
             if idx1 is None:
                 # g2 = "Rest" if group2 is None else group2
                 g1_name = DE_group_names[comparison][0]
@@ -228,7 +248,9 @@ def _niche_de_core(
     # fit the classifier
     lfc_g1_g2 = DE_results["group1_group2"][lfc_select]
     lfc_n1_g2 = DE_results["neighbors1_group2"][lfc_select]
-    fdr_g1_n1 = DE_results["group1_neighbors1"][f"is_de_fdr_{fdr}"].copy()
+    fdr_g1_n1 = DE_results["group1_neighbors1"][
+        f"is_de_fdr_{DE_group_fdr['group1_neighbors1']}"
+    ].copy()
     fdr_g1_n1.loc[DE_results["group1_neighbors1"][lfc_select] < 0] = False
 
     if fdr_g1_n1.sum() == 0:
@@ -236,7 +258,11 @@ def _niche_de_core(
 
     print("Computing g1 confidence scores...")
     gpc_ = _gaussian_process_classifier(
-        lfc_g1_g2, lfc_n1_g2, fdr_g1_n1, n_restarts_optimizer=n_restarts_optimizer_gpc
+        lfc_g1_g2,
+        lfc_n1_g2,
+        fdr_g1_n1,
+        n_restarts_optimizer=n_restarts_optimizer_gpc,
+        restrict_to_upregulated=True,
     )
 
     for groups in list(DE_results.keys()):
