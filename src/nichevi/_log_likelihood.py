@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any, Callable
+from typing import TYPE_CHECKING
 
 import torch
-from scvi.module.base import LossOutput
-from torch import Tensor
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from typing import Any
+
+    from scvi.module.base import LossOutput
+    from torch import Tensor
 
 
 def compute_composition_error(
@@ -45,7 +49,9 @@ def compute_composition_error(
     for tensors in dataloader:
         _, _, losses = module(tensors, **kwargs)
         if isinstance(losses.composition_loss, dict):
-            composition_reconstruction_loss = torch.stack(list(losses.composition_loss.values())).sum(dim=0)
+            composition_reconstruction_loss = torch.stack(
+                list(losses.composition_loss.values())
+            ).sum(dim=0)
         else:
             composition_reconstruction_loss = losses.composition_loss
         composition_loss.append(composition_reconstruction_loss)

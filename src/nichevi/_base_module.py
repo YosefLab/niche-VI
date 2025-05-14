@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import field
+from typing import TYPE_CHECKING
 
 import flax
-from scvi._types import LossRecord, Tensor
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from scvi._types import LossRecord, Tensor
 
 
 @flax.struct.dataclass

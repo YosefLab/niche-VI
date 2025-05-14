@@ -67,13 +67,21 @@ def adjusted_nearest_neighbors(
     radius: int | None = None,
     k_nn: int | None = None,
     return_sparse: bool = True,
+    sample_selection: list[str] | None = None,
 ):
     from scipy.sparse import block_diag
     from sklearn.neighbors import NearestNeighbors
 
     adjacency_matrices = []
 
-    for sample in np.unique(cell_samples):
+    if sample_selection is None:
+        sample_names = np.unique(cell_samples)
+        print(f"Using all {len(sample_names)} samples")
+    else:
+        sample_names = sample_selection
+        print(f"Using subset of {len(sample_names)} samples")
+
+    for sample in sample_names:
         mask = np.squeeze(cell_samples == sample, axis=1)  # n_cells
         sample_coord = cell_coordinates[mask]  # n_cells_sample_i x 2
         sample_cell_types = np.squeeze(cell_labels[mask], axis=1)  # n_cells_sample_i

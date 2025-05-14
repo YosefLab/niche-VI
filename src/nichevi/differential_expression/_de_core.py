@@ -6,9 +6,8 @@ import pandas as pd
 from rich import print
 from scipy.sparse import csr_matrix
 from scvi import REGISTRY_KEYS
-
-# from scvi.model.base._differential import DifferentialComputation
 from scvi.model.base._de_core import _fdr_de_prediction, _prepare_obs
+from scvi.model.base._differential import DifferentialComputation
 from scvi.utils import track
 
 from nichevi import NICHEVI_REGISTRY_KEYS
@@ -16,7 +15,8 @@ from nichevi import NICHEVI_REGISTRY_KEYS
 from ._classifier import _gaussian_process_classifier
 from ._dataclass import DifferentialExpressionResults
 from ._de_utils import _get_nonzero_indices_from_rows, adjusted_nearest_neighbors, corrupt_counts
-from ._differential import DifferentialComputation
+
+# from ._differential import DifferentialComputation
 
 
 def _niche_de_core(

@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Sequence
+from typing import TYPE_CHECKING
 
 import torch
-from anndata import AnnData
 from scvi.model.base import (
     VAEMixin,
 )
 from scvi.utils import unsupported_if_adata_minified
 from torch import Tensor
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
+    from anndata import AnnData
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +76,13 @@ class NicheVAEMixin(VAEMixin):
 
         if dataloader is None:
             adata = self._validate_anndata(adata)
-            dataloader = self._make_data_loader(adata=adata, indices=indices, batch_size=batch_size)
+            dataloader = self._make_data_loader(
+                adata=adata, indices=indices, batch_size=batch_size
+            )
 
-        return compute_composition_error(self.module, dataloader, return_mean=return_mean, **kwargs)
+        return compute_composition_error(
+            self.module, dataloader, return_mean=return_mean, **kwargs
+        )
 
     @torch.inference_mode()
     @unsupported_if_adata_minified
@@ -131,6 +139,8 @@ class NicheVAEMixin(VAEMixin):
 
         if dataloader is None:
             adata = self._validate_anndata(adata)
-            dataloader = self._make_data_loader(adata=adata, indices=indices, batch_size=batch_size)
+            dataloader = self._make_data_loader(
+                adata=adata, indices=indices, batch_size=batch_size
+            )
 
         return compute_niche_error(self.module, dataloader, return_mean=return_mean, **kwargs)

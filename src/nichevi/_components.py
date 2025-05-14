@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from typing import Callable, Optional, Tuple
+from typing import Tuple
 
 import torch
 from scvi.nn import Decoder, FCLayers
@@ -322,7 +322,11 @@ class NicheDecoderAttention(nn.Module):
         # self.layer_norm_cell_type_embedding = nn.LayerNorm(n_input_attention)
 
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=n_input_attention, nhead=n_heads, dim_feedforward=n_hidden, dropout=dropout_rate, batch_first=True
+            d_model=n_input_attention,
+            nhead=n_heads,
+            dim_feedforward=n_hidden,
+            dropout=dropout_rate,
+            batch_first=True,
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
 
@@ -366,7 +370,9 @@ class NicheDecoderAttention(nn.Module):
             qkv = torch.cat([z_proj, cell_type_embedding], dim=1)
         elif z.ndim == 3:
             z_proj = z_proj.unsqueeze(2)
-            cell_type_embedding = cell_type_embedding.expand(z_proj.size(0), z_proj.size(1), -1, -1)
+            cell_type_embedding = cell_type_embedding.expand(
+                z_proj.size(0), z_proj.size(1), -1, -1
+            )
             qkv = torch.cat([z_proj, cell_type_embedding], dim=2)
             qkv = qkv.view(-1, qkv.size(2), qkv.size(3))
 
@@ -485,7 +491,9 @@ class NicheDecoderConditional(nn.Module):
             cell_type_embedding = cell_type_embedding.expand(
                 z_proj.size(0), z_proj.size(1), -1, -1
             )  # Sample x B x C x Tokens
-            qkv = torch.cat([z_proj, cell_type_embedding], dim=-1)  # Sample x B x C x (Latent + Tokens)
+            qkv = torch.cat(
+                [z_proj, cell_type_embedding], dim=-1
+            )  # Sample x B x C x (Latent + Tokens)
             qkv = qkv.view(
                 -1, qkv.size(2), qkv.size(3)
             )  # Sample x B x C x (Latent + Tokens) -> (Sample x B) x C x (Latent + Tokens)

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from lightning import LightningDataModule
+from typing import TYPE_CHECKING
+
 from scvi.dataloaders import DataSplitter
 from scvi.model._utils import get_max_epochs_heuristic, use_distributed_sampler
 from scvi.train import TrainRunner
 from scvi.utils._docstrings import devices_dsp
 
 from ._trainingplan import TrainingPlan
+
+if TYPE_CHECKING:
+    from lightning import LightningDataModule
 
 
 class UnsupervisedTrainingMixin:

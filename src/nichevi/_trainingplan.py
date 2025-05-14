@@ -1,9 +1,9 @@
 from collections import OrderedDict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 # from functools import partial
 from inspect import signature
-from typing import Any, Callable, Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 # import jax
 # import jax.numpy as jnp
@@ -69,7 +69,9 @@ def _compute_kl_weight(
         Minimum scaling factor on KL divergence during training.
     """
     if min_kl_weight > max_kl_weight:
-        raise ValueError(f"min_kl_weight={min_kl_weight} is larger than max_kl_weight={max_kl_weight}.")
+        raise ValueError(
+            f"min_kl_weight={min_kl_weight} is larger than max_kl_weight={max_kl_weight}."
+        )
 
     slope = max_kl_weight - min_kl_weight
     if n_epochs_kl_warmup:
@@ -114,7 +116,9 @@ def _compute_spatial_weight(
         Minimum scaling factor on KL divergence during training.
     """
     if min_spatial_weight > max_spatial_weight:
-        raise ValueError(f"min_kl_weight={min_spatial_weight} is larger than max_kl_weight={max_spatial_weight}.")
+        raise ValueError(
+            f"min_kl_weight={min_spatial_weight} is larger than max_kl_weight={max_spatial_weight}."
+        )
 
     slope = max_spatial_weight - min_spatial_weight
     if n_epochs_spatial_warmup:
@@ -279,7 +283,9 @@ class TrainingPlan(pl.LightningModule):
         n = 1 if n_total is None or n_total < 1 else n_total
         elbo = rec_loss + kl_local + (1 / n) * kl_global
         elbo.name = f"elbo_{mode}"
-        collection = OrderedDict([(metric.name, metric) for metric in [elbo, rec_loss, kl_local, kl_global]])
+        collection = OrderedDict(
+            [(metric.name, metric) for metric in [elbo, rec_loss, kl_local, kl_global]]
+        )
         return elbo, rec_loss, kl_local, kl_global, collection
 
     def initialize_train_metrics(self):
@@ -509,7 +515,9 @@ class TrainingPlan(pl.LightningModule):
 
         This type of function can be passed as the `optimizer_creator`
         """
-        return lambda params: optimizer_cls(params, lr=self.lr, eps=self.eps, weight_decay=self.weight_decay)
+        return lambda params: optimizer_cls(
+            params, lr=self.lr, eps=self.eps, weight_decay=self.weight_decay
+        )
 
     def get_optimizer_creator(self):
         """Get optimizer creator for the model."""
