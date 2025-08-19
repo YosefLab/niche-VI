@@ -27,7 +27,6 @@ from scvi.module.base import (
 
 # PyroBaseModuleClass,
 # TrainStateWithState,
-from scvi.nn import one_hot
 from scvi.train._constants import METRIC_KEYS
 
 # from pyro.nn import PyroModule

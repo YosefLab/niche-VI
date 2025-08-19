@@ -14,7 +14,6 @@ from scvi.module.base import (
     # LossOutput,
     auto_move_data,
 )
-from scvi.nn import one_hot
 from torch.distributions import Distribution
 
 from ._base_module import NicheLossOutput
@@ -445,10 +444,10 @@ class nicheVAE(VAE):
 
         if self.dispersion == "gene-label":
             px_r = linear(
-                one_hot(y, self.n_labels), self.px_r
+                torch.nn.functional.one_hot(y, self.n_labels), self.px_r
             )  # px_r gets transposed - last dimension is nb genes
         elif self.dispersion == "gene-batch":
-            px_r = linear(one_hot(batch_index, self.n_batch), self.px_r)
+            px_r = linear(torch.nn.functional.one_hot(batch_index, self.n_batch), self.px_r)
         elif self.dispersion == "gene":
             px_r = self.px_r
 
