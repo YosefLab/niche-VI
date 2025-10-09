@@ -1,4 +1,4 @@
-from ._classifier import _gaussian_process_classifier, plot_DE_results
+from ._classifier import _gaussian_process_classifier
 from ._dataclass import DifferentialExpressionResults
 from ._de_core import _dummy_adata, _niche_de_core
 from ._de_utils import _fdr_de_prediction, adjusted_nearest_neighbors, corrupt_counts
@@ -12,6 +12,6 @@ __all__ = [
     "DifferentialComputation",
     "_fdr_de_prediction",
     "_gaussian_process_classifier",
-    "plot_DE_results",
+    # "plot_DE_results",
     "DifferentialExpressionResults",
 ]
