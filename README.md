@@ -1,4 +1,4 @@
-# niche-VI
+# niche-VI archive (now scVIVA in scvi-tools)
 
 [![Tests][badge-tests]][link-tests]
 [![Documentation][badge-docs]][link-docs]
@@ -7,13 +7,7 @@
 [link-tests]: https://github.com/YosefLab/niche-VI/actions/workflows/test.yml
 [badge-docs]: https://img.shields.io/readthedocs/niche-VI
 
-Encoding expression and spatial context from spatial omics
-
-## Getting started
-
-Please refer to the [documentation][link-docs]. In particular, the
-
--   [API documentation][link-api].
+⚠️ Attention! DEPRECATED, repo to reproduce the results from the scVIVA paper, now maintained into [scvi-tools](https://github.com/scverse/scvi-tools).
 
 ## Installation
 
@@ -36,21 +30,12 @@ pip install niche-VI
 pip install git+https://github.com/YosefLab/niche-VI.git@main
 ```
 
-## Release notes
-
-See the [changelog][changelog].
-
-## Contact
-
-For questions and help requests, you can reach out in the [scverse discourse][scverse-discourse].
-If you found a bug, please use the [issue tracker][issue-tracker].
-
 ## Citation
-
-> t.b.a
-
-[scverse-discourse]: https://discourse.scverse.org/
-[issue-tracker]: https://github.com/YosefLab/niche-VI/issues
-[changelog]: https://niche-VI.readthedocs.io/latest/changelog.html
-[link-docs]: https://niche-VI.readthedocs.io
-[link-api]: https://niche-VI.readthedocs.io/latest/api.html
+> @article{levy2025scviva,
+  title={scVIVA: a probabilistic framework for representation of cells and their environments in spatial transcriptomics},
+  author={Levy, Nathan and Ingelfinger, Florian and Bakulin, Artemii and Cinnirella, Giacomo and Boyeau, Pierre and Nadler, Boaz and Ergen, Can and Yosef, Nir},
+  journal={bioRxiv},
+  pages={2025--06},
+  year={2025},
+  publisher={Cold Spring Harbor Laboratory}
+}
