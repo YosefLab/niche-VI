@@ -1,12 +1,5 @@
 # niche-VI archive (now scVIVA in scvi-tools)
 
-[![Tests][badge-tests]][link-tests]
-[![Documentation][badge-docs]][link-docs]
-
-[badge-tests]: https://img.shields.io/github/actions/workflow/status/YosefLab/niche-VI/test.yaml?branch=main
-[link-tests]: https://github.com/YosefLab/niche-VI/actions/workflows/test.yml
-[badge-docs]: https://img.shields.io/readthedocs/niche-VI
-
 ⚠️ Attention! DEPRECATED, repo to reproduce the results from the scVIVA paper, now maintained into [scvi-tools](https://github.com/scverse/scvi-tools).
 
 ## Installation
