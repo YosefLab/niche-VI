@@ -1,4 +1,4 @@
-from ._utils import _lisi_per_cell_type
+from ._utils import _lisi_per_cell_type, plot_history
 from .metrics import (
     SpatialAnalysis,
     compute_k_nn,
@@ -16,4 +16,5 @@ __all__ = [
     "compute_jaccard",
     "_lisi_per_cell_type",
     "get_gene_percentiles_list",
+    "plot_history",
 ]
