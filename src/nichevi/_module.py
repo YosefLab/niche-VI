@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import TYPE_CHECKING
 
-import numpy as np
 import torch
 from scvi import REGISTRY_KEYS
 from scvi.module import VAE, Classifier
@@ -14,11 +13,16 @@ from scvi.module.base import (
     # LossOutput,
     auto_move_data,
 )
-from torch.distributions import Distribution
 
 from ._base_module import NicheLossOutput
 from ._components import DirichletDecoder, Encoder, NicheDecoder, NicheDecoderConditional
 from ._constants import NICHEVI_MODULE_KEYS, NICHEVI_REGISTRY_KEYS
+
+if TYPE_CHECKING:
+    from typing import Literal
+
+    import numpy as np
+    from torch.distributions import Distribution
 
 logger = logging.getLogger(__name__)
 
