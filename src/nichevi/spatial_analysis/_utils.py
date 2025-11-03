@@ -1,8 +1,5 @@
-import os
-
-
 def _lisi_per_cell_type(adatype, embedding_key, label_key, n_neighbors=90, perplexity=30):
-    from scib_metrics import clisi_knn
+    from scib_metrics import lisi_knn
     from scib_metrics.nearest_neighbors import NeighborsResults
     from sklearn.neighbors import NearestNeighbors
 
@@ -10,13 +7,12 @@ def _lisi_per_cell_type(adatype, embedding_key, label_key, n_neighbors=90, perpl
     nbrs = NearestNeighbors(n_neighbors=n_neighbors, algorithm="kd_tree").fit(X)
     dists, inds = nbrs.kneighbors(X)
     neigh_results = NeighborsResults(indices=inds, distances=dists)
-    lisi_res = clisi_knn(neigh_results, labels, perplexity=perplexity, return_median=False)
+    lisi_res = lisi_knn(neigh_results, labels, perplexity=perplexity)
     return lisi_res
 
 
 def plot_history(models_history: dict, figures_folder: str):
     import matplotlib.pyplot as plt
-
 
     print(models_history.keys())
 
