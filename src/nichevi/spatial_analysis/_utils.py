@@ -1,4 +1,18 @@
+# def _lisi_per_cell_type(adatype, embedding_key, label_key, n_neighbors=90, perplexity=30):
+#     from scib_metrics import lisi_knn
+#     from scib_metrics.nearest_neighbors import NeighborsResults
+#     from sklearn.neighbors import NearestNeighbors
+
+#     X, labels = adatype.obsm[embedding_key], adatype.obs[label_key]
+#     nbrs = NearestNeighbors(n_neighbors=n_neighbors, algorithm="kd_tree").fit(X)
+#     dists, inds = nbrs.kneighbors(X)
+#     neigh_results = NeighborsResults(indices=inds, distances=dists)
+#     lisi_res = lisi_knn(neigh_results, labels, perplexity=perplexity)
+#     return lisi_res
+
+
 def _lisi_per_cell_type(adatype, embedding_key, label_key, n_neighbors=90, perplexity=30):
+    import numpy as np
     from scib_metrics import lisi_knn
     from scib_metrics.nearest_neighbors import NeighborsResults
     from sklearn.neighbors import NearestNeighbors
@@ -8,7 +22,11 @@ def _lisi_per_cell_type(adatype, embedding_key, label_key, n_neighbors=90, perpl
     dists, inds = nbrs.kneighbors(X)
     neigh_results = NeighborsResults(indices=inds, distances=dists)
     lisi_res = lisi_knn(neigh_results, labels, perplexity=perplexity)
-    return lisi_res
+
+    nlabels = len(np.unique(labels))
+    clisi = (nlabels - lisi_res) / (nlabels - 1)
+
+    return clisi
 
 
 def plot_history(models_history: dict, figures_folder: str):

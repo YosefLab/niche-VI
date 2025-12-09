@@ -1128,7 +1128,7 @@ class SpatialAnalysis:
         return df_summary_sorted
 
     batchcorr = BatchCorrection(
-        silhouette_batch=False,
+        # silhouette_batch=False,
         ilisi_knn=False,
         kbet_per_label=True,
         graph_connectivity=False,
