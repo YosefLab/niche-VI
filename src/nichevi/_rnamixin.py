@@ -1,8 +1,12 @@
+from collections.abc import Iterator
 from functools import partial
 from typing import Literal
 
+import numpy as np
 import pandas as pd
+import torch
 from anndata import AnnData
+from scvi.data._utils import _validate_adata_dataloader_input
 from scvi.model._utils import scrna_raw_counts_properties
 from scvi.model.base import (
     RNASeqMixin,
@@ -153,3 +157,103 @@ class NicheRNASeqMixin(RNASeqMixin):
             )
 
         return result
+
+    @torch.inference_mode()
+    def get_likelihood_parameters(
+        self,
+        adata: AnnData | None = None,
+        indices: list[int] | None = None,
+        n_samples: int | None = 1,
+        give_mean: bool | None = False,
+        batch_size: int | None = None,
+        dataloader: Iterator[dict[str, torch.Tensor | None]] | None = None,
+        **data_loader_kwargs,
+    ) -> dict[str, np.ndarray]:
+        r"""Estimates for the parameters of the likelihood :math:`p(x \mid z)`.
+
+        Parameters
+        ----------
+        adata
+            AnnData object with equivalent structure to initial AnnData. If `None`, defaults to the
+            AnnData object used to initialize the model.
+        indices
+            Indices of cells in adata to use. If `None`, all cells are used.
+        n_samples
+            Number of posterior samples to use for estimation.
+        give_mean
+            Return expected value of parameters or a samples
+        batch_size
+            Minibatch size for data loading into model. Defaults to `scvi.settings.batch_size`.
+        dataloader
+            An iterator over minibatches of data on which to compute the metric. The minibatches
+            should be formatted as a dictionary of :class:`~torch.Tensor` with keys as expected by
+            the model. If ``None``, a dataloader is created from ``adata``.
+        **data_loader_kwargs
+            Keyword args for data loader.
+
+        """
+        _validate_adata_dataloader_input(self, adata, dataloader)
+
+        if dataloader is None:
+            adata = self._validate_anndata(adata)
+            scdl = self._make_data_loader(adata=adata, indices=indices, batch_size=batch_size, **data_loader_kwargs)
+        else:
+            scdl = dataloader
+            for param in [indices, batch_size, n_samples]:
+                if param is not None:
+                    Warning(
+                        f"Using {param} after custom Dataloader was initialize is redundant, "
+                        f"please re-initialize with selected {param}",
+                    )
+
+        dropout_list = []
+        mean_list = []
+        dispersion_list = []
+        for tensors in scdl:
+            inference_kwargs = {"n_samples": n_samples}
+            _, generative_outputs = self.module.forward(
+                tensors=tensors,
+                inference_kwargs=inference_kwargs,
+                compute_loss=False,
+            )
+            px = generative_outputs["px"]
+            if self.module.gene_likelihood != "poisson":
+                px_r = px.theta
+                px_rate = px.mu
+            else:
+                px_rate = px.rate
+            if self.module.gene_likelihood == "zinb":
+                px_dropout = px.zi_probs
+                dropout_list += [px_dropout.cpu().numpy()]
+                dropout = np.concatenate(dropout_list, axis=-2)
+
+            n_batch = px_rate.size(0) if n_samples == 1 else px_rate.size(1)
+            if self.module.gene_likelihood != "poisson":
+                px_r = px_r.cpu().numpy()
+                if len(px_r.shape) == 1:
+                    dispersion_list += [np.repeat(px_r[np.newaxis, :], n_batch, axis=0)]
+                else:
+                    dispersion_list += [px_r]
+            mean_list += [px_rate.cpu().numpy()]
+
+        means = np.concatenate(mean_list, axis=-2)
+        if self.module.gene_likelihood != "poisson":
+            dispersions = np.concatenate(dispersion_list, axis=-2)
+
+        if give_mean and n_samples > 1:
+            if self.module.gene_likelihood == "zinb":
+                dropout = dropout.mean(0)
+            if self.module.gene_likelihood != "poisson":
+                dispersions = dispersions.mean(0)
+            means = means.mean(0)
+
+        return_dict = {}
+        return_dict["mean"] = means
+
+        if self.module.gene_likelihood == "zinb":
+            return_dict["dropout"] = dropout
+        if self.module.gene_likelihood != "poisson":
+            return_dict["dispersions"] = dispersions
+
+        return return_dict
+    
