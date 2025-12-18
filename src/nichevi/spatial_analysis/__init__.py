@@ -1,4 +1,4 @@
-from ._utils import _lisi_per_cell_type, plot_history
+from ._utils import _integration_lisi, _lisi_per_cell_type, plot_history
 from .metrics import (
     SpatialAnalysis,
     compute_k_nn,
@@ -17,4 +17,5 @@ __all__ = [
     "_lisi_per_cell_type",
     "get_gene_percentiles_list",
     "plot_history",
+    "_integration_lisi",
 ]
