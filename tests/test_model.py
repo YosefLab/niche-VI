@@ -1,9 +1,10 @@
 import numpy as np
+import pandas as pd
 
 # import pytest
 from scvi.data import _constants, synthetic_iid
 
-from nichevi import nicheVI
+from nichevi import nicheSCVI as nicheVI
 
 N_LAYERS = 1
 N_LATENT = 15
@@ -128,6 +129,28 @@ def test_nichevi():
     nichevae.get_latent_representation()
     nichevae.predict_neighborhood()  # specific to nicheSCVI
     # nichevae.predict_niche_activation()  # specific to nicheSCVI
+
+    # Test the new predict method
+    print("Testing predict method with soft=True")
+    predictions_soft = nichevae.predict(soft=True)
+    expected_shape = (adata.n_obs, 3)
+    assert predictions_soft.shape == expected_shape, f"Expected shape {expected_shape}, got {predictions_soft.shape}"
+    assert np.allclose(predictions_soft.sum(axis=1), 1.0), "Probabilities should sum to 1"
+    assert isinstance(predictions_soft, pd.DataFrame), "soft=True should return DataFrame"
+    print(f"Soft predictions shape: {predictions_soft.shape}")
+    print(f"First 3 predictions:\n{predictions_soft.head(3)}")
+
+    print("Testing predict method with soft=False")
+    predictions_hard = nichevae.predict(soft=False)
+    expected_hard_shape = (adata.n_obs,)
+    assert (
+        predictions_hard.shape == expected_hard_shape
+    ), f"Expected shape {expected_hard_shape}, got {predictions_hard.shape}"
+    assert isinstance(predictions_hard, np.ndarray), "soft=False should return numpy array"
+    assert all(isinstance(label, str) for label in predictions_hard), "Hard predictions should be strings"
+    print(f"Hard predictions shape: {predictions_hard.shape}")
+    print(f"Unique predicted labels: {np.unique(predictions_hard)}")
+    print(f"First 10 predictions: {predictions_hard[:10]}")
 
     nichevae.differential_expression(
         groupby="labels",

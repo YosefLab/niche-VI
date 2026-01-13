@@ -444,6 +444,100 @@ class nicheSCVI(
         return torch.cat(ct_prediction).numpy()
 
     @torch.inference_mode()
+    def predict(
+        self,
+        adata: AnnData | None = None,
+        indices: np.ndarray | None = None,
+        batch_size: int | None = 1024,
+        soft: bool = True,
+    ) -> np.ndarray | pd.DataFrame:
+        """Predict cell type labels using the trained classifier.
+
+        This method uses the classifier trained during semi-supervised learning to predict
+        cell type labels for cells in the dataset.
+
+        Parameters
+        ----------
+        adata
+            AnnData object that has been registered via :meth:`~nichevi.model.nicheSCVI.setup_anndata`.
+            If ``None``, defaults to the AnnData object used to initialize the model.
+        indices
+            Indices of cells in adata to use. If ``None``, all cells are used.
+        batch_size
+            Minibatch size for data loading.
+        soft
+            If ``True``, return probability distributions over cell types. If ``False``,
+            return hard cell type label assignments (most likely cell type).
+
+        Returns
+        -------
+        If ``soft=True``, returns a :class:`~pandas.DataFrame` of cell type probabilities
+        with shape ``(n_cells, n_cell_types)``. If ``soft=False``, returns a
+        :class:`~numpy.ndarray` of cell type labels with shape ``(n_cells,)``.
+
+        Raises
+        ------
+        RuntimeError
+            If the model was not trained with ``semisupervised=True`` (no classifier exists).
+
+        Examples
+        --------
+        >>> adata = anndata.read_h5ad(path_to_anndata)
+        >>> nicheSCVI.setup_anndata(adata, labels_key="cell_type")
+        >>> model = nicheSCVI(adata, semisupervised=True)
+        >>> model.train()
+        >>> # Get probability distributions
+        >>> predictions = model.predict()
+        >>> # Get hard label assignments
+        >>> labels = model.predict(soft=False)
+        >>> adata.obs["predicted_labels"] = labels
+        """
+        if self.module.classifier is None:
+            raise RuntimeError(
+                "This model was not trained with a classifier. "
+                "To use predict(), initialize the model with semisupervised=True."
+            )
+
+        self._check_if_trained(warn=False)
+
+        adata = self._validate_anndata(adata)
+        scdl = self._make_data_loader(adata=adata, indices=indices, batch_size=batch_size)
+
+        # Get label encoder to map predictions back to cell type names
+        label_state_registry = self.adata_manager.get_state_registry(REGISTRY_KEYS.LABELS_KEY)
+
+        predictions = []
+        for tensors in scdl:
+            inference_inputs = self.module._get_inference_input(tensors)
+            outputs = self.module.inference(**inference_inputs)
+
+            # Get latent mean representation
+            z_mean = outputs["qz"].loc
+
+            # Get classifier logits and apply softmax
+            logits = self.module.classifier(z_mean)
+            probs = torch.nn.functional.softmax(logits, dim=-1)
+
+            predictions.append(probs.detach().cpu())
+
+        # Concatenate all predictions
+        all_predictions = torch.cat(predictions).numpy()
+
+        if soft:
+            # Return probability distributions as DataFrame
+            label_names = label_state_registry.categorical_mapping
+            return pd.DataFrame(
+                all_predictions,
+                columns=label_names,
+                index=adata.obs_names if indices is None else adata.obs_names[indices],
+            )
+        else:
+            # Return hard label assignments
+            label_indices = np.argmax(all_predictions, axis=1)
+            label_names = label_state_registry.categorical_mapping
+            return np.array([label_names[idx] for idx in label_indices])
+
+    @torch.inference_mode()
     def get_niche_attention(
         self,
         adata: AnnData | None = None,
