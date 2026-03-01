@@ -12,6 +12,8 @@
 
 import numpy as np
 import pandas as pd
+
+# from rich import print
 from scib_metrics import lisi_knn
 from scib_metrics.nearest_neighbors import NeighborsResults
 from sklearn.neighbors import NearestNeighbors
@@ -26,6 +28,8 @@ def _lisi_per_cell_type(adatype, embedding_key, label_key, n_neighbors=90, perpl
     lisi_res = lisi_knn(neigh_results, labels, perplexity=perplexity)
 
     nlabels = len(np.unique(labels))
+    print("Number of labels:", nlabels)
+    print("Min", np.min(lisi_res), "Max", np.max(lisi_res))
     clisi = (nlabels - lisi_res) / (nlabels - 1)
 
     return clisi
@@ -34,13 +38,21 @@ def _lisi_per_cell_type(adatype, embedding_key, label_key, n_neighbors=90, perpl
 def _integration_lisi(adatype, embedding_key, label_key, n_neighbors=90, perplexity=30) -> float:
     # adapted from https://github.com/YosefLab/scib-metrics/blob/main/src/scib_metrics/metrics/_lisi.py
     X, labels = adatype.obsm[embedding_key], adatype.obs[label_key]
+    print(f"Computing iLISI for {embedding_key} based on {label_key}")
     nbrs = NearestNeighbors(n_neighbors=n_neighbors, algorithm="kd_tree").fit(X)
     dists, inds = nbrs.kneighbors(X)
     neigh_results = NeighborsResults(indices=inds, distances=dists)
     lisi_res = lisi_knn(neigh_results, labels, perplexity=perplexity)
     # ilisi = np.nanmedian(lisi)
     nbatches = len(np.unique(labels))
+    print("Number of batches:", nbatches)
+    print("Min", np.min(lisi_res), "Max", np.max(lisi_res))
+    lisi_res = np.clip(lisi_res, 1.0, nbatches)
+    ilisi = lisi_res
     ilisi = (lisi_res - 1) / (nbatches - 1)
+    assert np.all((ilisi >= 0) & (ilisi <= 1)), "iLISI score should be between 0 and 1"
+    print("Median iLISI:", np.nanmedian(ilisi))
+    print("Mean iLISI:", np.nanmean(ilisi))
     return ilisi
 
 
