@@ -1,30 +1,45 @@
-# niche-VI archive (now scVIVA in scvi-tools)
+# scviva-legacy (formerly niche-VI)
 
-⚠️ Attention! DEPRECATED, repo to reproduce the results from the scVIVA paper, now maintained into [scvi-tools](https://github.com/scverse/scvi-tools).
+> **Archived.** This is the original research implementation of scVIVA, kept to reproduce the
+> results of the scVIVA paper. scVIVA is now maintained in
+> [scvi-tools](https://github.com/scverse/scvi-tools) as `scvi.external.SCVIVA`. Use that for new
+> work. This repository receives no further development.
 
-## Installation
+The code that produces the paper's figures is in
+[scVIVA-reproducibility](https://github.com/LevyNat/scVIVA-reproducibility). It imports this
+package as `nichevi`.
 
-You need to have Python 3.9 or newer installed on your system. If you don't have
-Python installed, we recommend installing [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge).
+## Which version to install
 
-There are several alternative options to install niche-VI:
-
-<!--
-1) Install the latest release of `niche-VI` from `PyPI <https://pypi.org/project/niche-VI/>`_:
-
-```bash
-pip install niche-VI
-```
--->
-
-1. Install the latest development version:
+All paper results were produced with commit
+[`34a85af`](https://github.com/YosefLab/scviva-legacy/commit/34a85af59a441d69ed7aeb90d4dda98f3dcbf047)
+("iLISI computation"). Install that exact commit:
 
 ```bash
-pip install git+https://github.com/YosefLab/niche-VI.git@main
+pip install git+https://github.com/YosefLab/scviva-legacy.git@34a85af59a441d69ed7aeb90d4dda98f3dcbf047
 ```
+
+The repository was renamed from `niche-VI`. GitHub redirects the old URL, so
+`git+https://github.com/YosefLab/niche-VI.git@...` still works. The Python import name is still
+`nichevi`, and the distribution name is still `niche-VI`. Neither was renamed, because the trained
+checkpoints are loaded through this package and its classes.
+
+The paper environment also pinned scvi-tools to development commit `3e275ff` (installed from git)
+and scib-metrics to the 0.5.7 release. The full environment is `envs/scvi.yml` in the
+reproducibility repo.
+
+Python 3.12 was used. The package declares `>=3.9`.
+
+## Relation to `scvi.external.SCVIVA`
+
+The scvi-tools port is a reimplementation, not a copy of this package. Its defaults and API
+differ from this one, so results from this package and from the port are not expected to be
+numerically identical. To reproduce the paper's numbers, use this package at the commit above.
 
 ## Citation
-> @article{levy2025scviva,
+
+```bibtex
+@article{levy2025scviva,
   title={scVIVA: a probabilistic framework for representation of cells and their environments in spatial transcriptomics},
   author={Levy, Nathan and Ingelfinger, Florian and Bakulin, Artemii and Cinnirella, Giacomo and Boyeau, Pierre and Nadler, Boaz and Ergen, Can and Yosef, Nir},
   journal={bioRxiv},
@@ -32,3 +47,4 @@ pip install git+https://github.com/YosefLab/niche-VI.git@main
   year={2025},
   publisher={Cold Spring Harbor Laboratory}
 }
+```
