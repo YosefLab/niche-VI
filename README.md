@@ -2,12 +2,12 @@
 
 > **Archived.** This is the original research implementation of scVIVA, kept to reproduce the
 > results of the scVIVA paper. scVIVA is now maintained in
-> [scvi-tools](https://github.com/scverse/scvi-tools) as `scvi.external.SCVIVA`. Use that for new
-> work. This repository receives no further development.
+> [scVIVA-Tools](https://scviva-tools.org/) ([GitHub](https://github.com/YosefLab/scviva-tools)),
+> installed with `pip install scviva-tools` and used as `scviva.SCVIVA`. Use that for new work.
+> This repository receives no further development.
 
 The code that produces the paper's figures is in
-[scVIVA-reproducibility](https://github.com/LevyNat/scVIVA-reproducibility). It imports this
-package as `nichevi`.
+[scviva_paper](https://github.com/LevyNat/scviva_paper). It imports this package as `nichevi`.
 
 ## Which version to install
 
@@ -30,11 +30,11 @@ reproducibility repo.
 
 Python 3.12 was used. The package declares `>=3.9`.
 
-## Relation to `scvi.external.SCVIVA`
+## Relation to scVIVA-Tools
 
-The scvi-tools port is a reimplementation, not a copy of this package. Its defaults and API
-differ from this one, so results from this package and from the port are not expected to be
-numerically identical. To reproduce the paper's numbers, use this package at the commit above.
+[scVIVA-Tools](https://scviva-tools.org/) (`scviva.SCVIVA`) is a reimplementation, not a copy of
+this package. Its defaults and API differ from this one, so results from this package and from
+scVIVA-Tools are not expected to be numerically identical. To reproduce the paper's numbers, use this package at the commit above.
 
 ## Citation
 
