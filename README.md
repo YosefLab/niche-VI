@@ -30,11 +30,7 @@ reproducibility repo.
 
 Python 3.12 was used. The package declares `>=3.9`.
 
-## Relation to scVIVA-Tools
 
-[scVIVA-Tools](https://scviva-tools.org/) (`scviva.SCVIVA`) is a reimplementation, not a copy of
-this package. Its defaults and API differ from this one, so results from this package and from
-scVIVA-Tools are not expected to be numerically identical. To reproduce the paper's numbers, use this package at the commit above.
 
 ## Citation
 
